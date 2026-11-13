@@ -9,11 +9,12 @@ setDefaultResultOrder('ipv4first');
 setDefaultAutoSelectFamily(false);
 
 async function bootstrap() {
-  const keyPath = path.resolve(import.meta.dirname, '../ayinu-frontend/key.pem');
-  const certPath = path.resolve(import.meta.dirname, '../ayinu-frontend/cert.pem');
+  const isHttps = process.env.ENABLE_HTTPS === 'true';
+  const keyPath = path.resolve(process.cwd(), 'ayinu-frontend/key.pem');
+  const certPath = path.resolve(process.cwd(), 'ayinu-frontend/cert.pem');
 
   let httpsOptions: { key: Buffer; cert: Buffer } | undefined;
-  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+  if (isHttps && fs.existsSync(keyPath) && fs.existsSync(certPath)) {
     httpsOptions = {
       key: fs.readFileSync(keyPath),
       cert: fs.readFileSync(certPath),

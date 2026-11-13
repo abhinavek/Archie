@@ -1,6 +1,9 @@
-// Automatically determine backend host: if opened on mobile (e.g., https://192.168.x.x:5173),
-// connect to port 3001 on the same IP instead of hardcoded 'localhost'
-const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:3001`;
+// Determine backend host & scheme dynamically:
+// If frontend is opened over HTTPS, try HTTPS backend; otherwise default to HTTP.
+const API_PORT = 3001;
+const API_BASE_URL = window.location.protocol === 'https:'
+  ? `https://${window.location.hostname}:${API_PORT}`
+  : `http://${window.location.hostname}:${API_PORT}`;
 const MODEL_URL =
   'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/model';
 
