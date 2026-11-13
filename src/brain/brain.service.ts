@@ -35,12 +35,12 @@ const ROBOT_RULES = [
   'When asked for remembered facts, numbers, names, or locations, consult ONLY the Recent Spatial & Factual Context and Conversation History below. If you genuinely do not know, say so simply and directly.',
 
   // 6. Tool Execution & Output Format
-  'When asked for live information (weather, web search) or to interact with physical actuators, you have tool access. Execute the tool and ground your spoken response entirely in the returned data.',
+  'When asked for live information (weather, web search, nearby places, restaurants, news, facts) or to interact with physical actuators, you MUST execute the appropriate tool (such as search_web or get_weather) rather than declining.',
   'STRICT FORMATTING RULE: When you are speaking to the user, respond directly in plain spoken text ONLY. NEVER output JSON objects, markdown fences, or fake function calls like {"name": "say", "parameters": {"text": "..."}} in your reply.',
 
   // 7. Capability Boundaries
   'Do NOT offer to perform actions you cannot physically execute (e.g., booking tables, making phone calls, or buying items).',
-  'Do NOT invent places, businesses, or recommendations. If the user asks for nearby places and you do not have tool data for it, you MUST reply: "I do not have access to local restaurant data right now."'
+  'Do NOT invent places, businesses, or recommendations from imagination. ALWAYS call search_web to look up real places and restaurants in the user location.',
 ];
 
 export interface ChatMessage {
@@ -95,13 +95,13 @@ const BRAIN_TOOLS = [
     function: {
       name: 'search_web',
       description:
-        'Search the live internet for recent news, current events, scores, or facts outside your training data. this tool only use when user explicitly ask for current event information',
+        'Search the live web for local restaurants, places, businesses, news, current events, or facts. Always use this tool when the user asks for recommendations, nearby places, or web search.',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'The search query or topic to look up on the web',
+            description: 'The search query or topic to look up on the web (include the city/locality if known, e.g. "good restaurants in Bengaluru" or "Italian food nearby")',
           },
         },
         required: ['query'],
