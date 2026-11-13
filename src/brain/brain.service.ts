@@ -5,8 +5,8 @@ import { firstValueFrom } from 'rxjs';
 import { MemoryService } from '../memory/memory.service.js';
 import { console } from 'inspector';
 
-const CHAT_MODEL = 'llama3.2:3b';
-const VISION_MODEL = 'llava';
+const CHAT_MODEL = process.env.CHAT_MODEL || 'llama3.2:3b';
+const VISION_MODEL = process.env.VISION_MODEL || 'llama3.2-vision';
 const ROBOT_NAME = 'Ayinu';
 
 /**
@@ -680,25 +680,32 @@ Decide if this observation requires an immediate, helpful, friendly remark to th
   }
 
   /**
-   * Describes a camera frame (base64 JPEG/PNG) using LLaVA via Ollama and
-   * saves the observation into spatial memory.
+   * Describes a camera frame (base64 JPEG/PNG) using Ollama vision model and
+   * saves the observation into spatial memory. Gracefully fails if no vision model is installed.
    */
   async describeScene(imageBase64: string): Promise<string> {
-    const { data } = await firstValueFrom(
-      this.http.post<{ response?: string }>(`${this.ollamaUrl}/api/generate`, {
-        model: VISION_MODEL,
-        prompt:
-          'Briefly describe the objects and people you see in this room in 1-2 sentences.',
-        images: [imageBase64],
-        stream: false,
-      }),
-    );
+    try {
+      const { data } = await firstValueFrom(
+        this.http.post<{ response?: string }>(`${this.ollamaUrl}/api/generate`, {
+          model: VISION_MODEL,
+          prompt:
+            'Briefly describe the objects and people you see in this room in 1-2 sentences.',
+          images: [imageBase64],
+          stream: false,
+          options: { temperature: 0.1 },
+        }),
+      );
 
-    const description = data?.response?.trim() ?? '';
-    if (description) {
-      await this.memory.memorizeScene(description, { category: 'spatial' });
+      const description = data?.response?.trim() ?? '';
+      if (description) {
+        await this.memory.memorizeScene(description, { category: 'spatial' });
+      }
+      return description;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`[describeScene] Vision model "${VISION_MODEL}" error: ${msg}. Run "ollama pull ${VISION_MODEL}" to enable vision.`);
+      return '';
     }
-    return description;
   }
 
   /**
