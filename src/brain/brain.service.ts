@@ -205,14 +205,21 @@ export class BrainService {
       { role: 'user', content: trimmedPrompt },
     ];
 
+    const isLiveInfoQuery =
+      /\b(?:weather|temperature|forecast|rain|climate|search|news|who is|what is the latest|google|lookup|look up)\b/i.test(
+        trimmedPrompt,
+      );
+
     const tOllama = Date.now();
-    this.logger.log(`[ask:ollama] Sending prompt to ${CHAT_MODEL} (with tools)...`);
+    this.logger.log(
+      `[ask:ollama] Sending prompt to ${CHAT_MODEL}${isLiveInfoQuery ? ' (with tools)' : ''}...`,
+    );
     const firstCall = await firstValueFrom(
       this.http.post<OllamaChatResponse>(`${this.ollamaUrl}/api/chat`, {
         model: CHAT_MODEL,
         stream: false,
         options: { temperature: 0.7 },
-        tools: BRAIN_TOOLS,
+        ...(isLiveInfoQuery ? { tools: BRAIN_TOOLS } : {}),
         messages,
       }),
     );
@@ -286,26 +293,42 @@ export class BrainService {
       answer = message?.content?.trim() ?? '';
     }
 
-    // Clean up if the LLM wrapped its reply in tool JSON like {"name": "say", "parameters": {"text": "..."}}
-    if (answer.startsWith('{') && answer.endsWith('}')) {
+    // Clean up if the LLM wrapped its reply in tool JSON or produced empty {"name": "say", ...}
+    if (answer.includes('{"name":') || (answer.startsWith('{') && answer.endsWith('}'))) {
       try {
-        const parsed = JSON.parse(answer) as Record<string, unknown>;
-        if (typeof parsed.parameters === 'object' && parsed.parameters !== null) {
-          const params = parsed.parameters as Record<string, unknown>;
-          if (typeof params.text === 'string' && params.text.trim()) {
-            answer = params.text.trim();
-          } else if (typeof params.message === 'string' && params.message.trim()) {
-            answer = params.message.trim();
+        const jsonMatch = answer.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+          if (typeof parsed.parameters === 'object' && parsed.parameters !== null) {
+            const params = parsed.parameters as Record<string, unknown>;
+            if (typeof params.text === 'string' && params.text.trim()) {
+              answer = params.text.trim();
+            } else if (typeof params.message === 'string' && params.message.trim()) {
+              answer = params.message.trim();
+            } else {
+              answer = '';
+            }
+          } else if (typeof parsed.text === 'string' && parsed.text.trim()) {
+            answer = parsed.text.trim();
+          } else if (typeof parsed.answer === 'string' && parsed.answer.trim()) {
+            answer = parsed.answer.trim();
+          } else if (typeof parsed.response === 'string' && parsed.response.trim()) {
+            answer = parsed.response.trim();
+          } else {
+            answer = '';
           }
-        } else if (typeof parsed.text === 'string' && parsed.text.trim()) {
-          answer = parsed.text.trim();
-        } else if (typeof parsed.answer === 'string' && parsed.answer.trim()) {
-          answer = parsed.answer.trim();
-        } else if (typeof parsed.response === 'string' && parsed.response.trim()) {
-          answer = parsed.response.trim();
         }
       } catch {
         // Not valid JSON, keep answer as is
+      }
+    }
+
+    // Fallback if LLM produced an empty response or an empty say tool payload
+    if (!answer.trim()) {
+      if (personName) {
+        answer = `Hello ${personName}! How can I help you today?`;
+      } else {
+        answer = `Hello! I am ${ROBOT_NAME}. May I know your name?`;
       }
     }
 
