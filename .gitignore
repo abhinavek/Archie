@@ -5,6 +5,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# SSL Certificates
+ayinu-frontend/*.pem
+*.pem
+
 # Environment — NEVER commit secrets
 .env
 .env.local

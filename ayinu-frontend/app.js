@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://localhost:3001';
+// Automatically determine backend host: if opened on mobile (e.g., https://192.168.x.x:5173),
+// connect to port 3001 on the same IP instead of hardcoded 'localhost'
+const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:3001`;
 const MODEL_URL =
   'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/model';
 
@@ -490,11 +492,22 @@ toggleCameraBtn.addEventListener('click', async () => {
       window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
     }
     await loadFaceModels();
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user' },
-      audio: true,
-    });
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: true,
+      });
+    } catch (mediaErr) {
+      console.warn('getUserMedia audio+video failed, trying video only:', mediaErr);
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+      });
+    }
     video.srcObject = stream;
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
+    await video.play().catch((e) => console.warn('video play catch:', e));
 
     // Acquire client geolocation coordinates (lat/long) for location-based tools
     if ('geolocation' in navigator) {
