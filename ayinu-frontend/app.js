@@ -105,14 +105,76 @@ const SpeechRecognitionCtor =
 let recognition = null;
 
 // ==========================================================================
-// Waveform Animation (Figma Voice frequency lines)
+// Waveform & Heartbeat Animation (Figma Voice frequency lines / Heartbeat)
 // ==========================================================================
 let wavePhase = 0;
+let heartPhase = 0;
+
+function drawHeartbeat(ctx, cx, cy) {
+  heartPhase += 0.06;
+
+  // Double pulse heartbeat rhythm (lub-dub)
+  const cycle = (heartPhase % (Math.PI * 2));
+  let pulse = 0;
+  if (cycle < 0.6) {
+    pulse = Math.sin((cycle / 0.6) * Math.PI) * 12; // First beat (lub)
+  } else if (cycle > 0.8 && cycle < 1.4) {
+    pulse = Math.sin(((cycle - 0.8) / 0.6) * Math.PI) * 8; // Second beat (dub)
+  }
+
+  const baseRadius = 38 + pulse;
+
+  // Glowing outer halos
+  const rings = [
+    { radius: baseRadius + 22, color: 'rgba(180, 160, 230, 0.15)', width: 1.5 },
+    { radius: baseRadius + 11, color: 'rgba(150, 130, 215, 0.28)', width: 2 },
+    { radius: baseRadius,      color: 'rgba(125, 95, 200, 0.85)',  width: 2.5 },
+  ];
+
+  rings.forEach((r) => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, Math.max(2, r.radius), 0, Math.PI * 2);
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = r.width;
+    ctx.stroke();
+  });
+
+  // Soft glowing center core
+  const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, baseRadius);
+  grad.addColorStop(0, 'rgba(195, 175, 245, 0.7)');
+  grad.addColorStop(0.5, 'rgba(145, 120, 215, 0.35)');
+  grad.addColorStop(1, 'rgba(110, 80, 185, 0)');
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, baseRadius, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Subtle circular pulsating ring markers
+  for (let i = 0; i < 4; i++) {
+    const angle = (heartPhase * 0.8) + (i * (Math.PI / 2));
+    const dotX = cx + Math.cos(angle) * (baseRadius + 6);
+    const dotY = cy + Math.sin(angle) * (baseRadius + 6);
+
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(125, 95, 200, 0.9)';
+    ctx.fill();
+  }
+}
+
 function drawWave() {
   if (!waveCtx || !waveCanvas) return;
   const w = waveCanvas.width;
   const h = waveCanvas.height;
   waveCtx.clearRect(0, 0, w, h);
+
+  // If an API request is currently pending, morph the wave into a round pulsing heartbeat
+  if (isBusy) {
+    drawHeartbeat(waveCtx, w / 2, h / 2);
+    requestAnimationFrame(drawWave);
+    return;
+  }
 
   const colors = [
     'rgba(215, 200, 240, 0.35)',
