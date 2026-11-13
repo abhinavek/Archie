@@ -28,7 +28,16 @@ const askForm = document.getElementById('askForm');
 const promptInput = document.getElementById('promptInput');
 const chatLog = document.getElementById('chatLog');
 
-let running = false;
+// Pre-warm SpeechSynthesis on user interaction (mandatory for iOS WebKit)
+function primeSpeechSynthesis() {
+  if ('speechSynthesis' in window) {
+    const warmUtter = new SpeechSynthesisUtterance(' ');
+    warmUtter.volume = 0.01;
+    window.speechSynthesis.speak(warmUtter);
+  }
+}
+document.addEventListener('touchstart', primeSpeechSynthesis, { once: true });
+document.addEventListener('click', primeSpeechSynthesis, { once: true });
 let modelsLoaded = false;
 let scanTimer = null;
 let speechEnabled = true;
@@ -84,29 +93,64 @@ async function speak(text) {
   addMessage('robot', text);
   if (!speechEnabled || !('speechSynthesis' in window)) return;
 
-  window.speechSynthesis.cancel();
+  // On iOS, calling cancel() right before speak() can silently drop speech synthesis
   isSpeaking = true;
   stopListeningTemp();
   setState('Speaking…');
 
   await new Promise((resolve) => {
-    const utter = new SpeechSynthesisUtterance(text);
-    const selectedLang = languageSelect ? languageSelect.value : 'ml-IN';
-    utter.lang = selectedLang;
-    
-    // Choose appropriate voice if available for Malayalam or selected language
-    const voices = window.speechSynthesis.getVoices();
-    const matchingVoice = voices.find(
-      (v) => v.lang.toLowerCase() === selectedLang.toLowerCase() || v.lang.startsWith(selectedLang.split('-')[0]),
-    );
-    if (matchingVoice) {
-      utter.voice = matchingVoice;
-    }
+    try {
+      const utter = new SpeechSynthesisUtterance(text);
+      const selectedLang = languageSelect ? languageSelect.value : 'ml-IN';
+      
+      const voices = window.speechSynthesis.getVoices() || [];
+      const exactVoice = voices.find((v) => v.lang.toLowerCase() === selectedLang.toLowerCase());
+      const prefixVoice = voices.find((v) => v.lang.toLowerCase().startsWith(selectedLang.split('-')[0].toLowerCase()));
+      
+      if (exactVoice) {
+        utter.voice = exactVoice;
+        utter.lang = exactVoice.lang;
+      } else if (prefixVoice) {
+        utter.voice = prefixVoice;
+        utter.lang = prefixVoice.lang;
+      } else {
+        // Fallback to Malayalam locale string or default English if unavailable on iOS
+        utter.lang = selectedLang;
+      }
 
-    utter.rate = 1.0;
-    utter.onend = resolve;
-    utter.onerror = resolve;
-    window.speechSynthesis.speak(utter);
+      utter.rate = 1.0;
+      utter.pitch = 1.0;
+      utter.volume = 1.0;
+
+      let timer = null;
+      const finish = () => {
+        if (timer) clearTimeout(timer);
+        resolve();
+      };
+
+      // Safety timeout: iOS speech synthesis occasionally never fires onend
+      const estimatedDurationMs = Math.max(3000, (text.length / 10) * 1000);
+      timer = setTimeout(() => {
+        console.warn('[Speech] Fallback timeout triggered for onend');
+        finish();
+      }, estimatedDurationMs);
+
+      utter.onend = finish;
+      utter.onerror = (e) => {
+        console.warn('[Speech] Utterance error:', e);
+        finish();
+      };
+
+      // Resume in case iOS audio context was paused
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
+      window.speechSynthesis.speak(utter);
+    } catch (err) {
+      console.warn('[Speech] speak() exception:', err);
+      resolve();
+    }
   });
 
   isSpeaking = false;

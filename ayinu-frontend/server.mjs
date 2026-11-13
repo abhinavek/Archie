@@ -41,7 +41,8 @@ const server = https.createServer({ key, cert }, (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`\n🚀 Frontend running on HTTPS: https://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 Frontend running on HTTPS: https://0.0.0.0:${PORT}`);
+  console.log('Access from your phone: https://192.168.1.39:5173');
   console.log('Note: Accept the self-signed certificate warning in your browser once.\n');
 });
