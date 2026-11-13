@@ -89,6 +89,39 @@ export class BrainController {
     return { answer };
   }
 
+  @Post('frame')
+  async receiveLatestFrame(
+    @Body('frameBase64') frameBase64?: string,
+  ): Promise<{ status: string }> {
+    if (frameBase64) {
+      this.brain.updateLatestFrame(frameBase64);
+    }
+    return { status: 'ok' };
+  }
+
+  @Post('continuous-scene')
+  async continuousScene(
+    @Body('sceneDescription') sceneDescription?: string,
+    @Body('frameBase64') frameBase64?: string,
+    @Body('personName') personName?: string,
+  ): Promise<{ proactiveSpeech: string | null }> {
+    if (frameBase64) {
+      this.brain.updateLatestFrame(frameBase64);
+    }
+
+    let description = sceneDescription?.trim();
+    if (!description && frameBase64) {
+      description = await this.brain.describeScene(frameBase64);
+    }
+
+    if (!description) {
+      return { proactiveSpeech: null };
+    }
+
+    const proactiveSpeech = await this.brain.processContinuousScene(description, personName);
+    return { proactiveSpeech };
+  }
+
   @Post('faces/recognize')
   async recognizeFace(
     @Body('descriptor') descriptor?: number[],

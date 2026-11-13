@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -55,6 +55,10 @@ export class MemoryService implements OnModuleInit {
   private readonly logger = new Logger(MemoryService.name);
   private client: QdrantClient;
   private readonly ollamaUrl: string;
+
+  /** Rolling in-memory window of the most recent visual observations (last 50-60 seconds) */
+  private readonly liveSpatialMemory: string[] = [];
+  private static readonly MAX_LIVE_MEMORIES = 10;
 
   constructor(
     private readonly config: ConfigService,
@@ -192,6 +196,68 @@ export class MemoryService implements OnModuleInit {
     });
 
     this.logger.debug(`Memorized scene: "${trimmed.slice(0, 60)}"`);
+  }
+
+  /**
+   * Updates rolling in-memory live spatial perception with a timestamped observation.
+   */
+  updateLiveSpatialMemory(description: string): void {
+    const trimmed = description.trim();
+    if (!trimmed) return;
+    const timeStr = new Date().toLocaleTimeString();
+    this.liveSpatialMemory.push(`[${timeStr}] Camera saw: ${trimmed}`);
+    if (this.liveSpatialMemory.length > MemoryService.MAX_LIVE_MEMORIES) {
+      this.liveSpatialMemory.shift();
+    }
+  }
+
+  /**
+   * Returns formatted rolling context of live physical environment.
+   */
+  getLiveEnvironmentContext(): string {
+    return this.liveSpatialMemory.length > 0
+      ? this.liveSpatialMemory.join('\n')
+      : 'No live visual observations captured yet.';
+  }
+
+  /**
+   * Generates a deterministic UUID from an object's canonical name.
+   */
+  private getDeterministicObjectUUID(objectName: string): string {
+    const hash = createHash('md5')
+      .update(objectName.toLowerCase().trim())
+      .digest('hex');
+    return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  }
+
+  /**
+   * Memorizes or updates the current location of an object using a deterministic ID.
+   * If the object moves (e.g. "red mug" was on table, now on counter), upserting
+   * with the same ID overwrites the older location point in Qdrant rather than duplicating it.
+   */
+  async memorizeObjectLocation(objectName: string, locationDescription: string): Promise<void> {
+    const canonicalName = objectName.trim().toLowerCase();
+    const factText = `The ${canonicalName} is ${locationDescription.trim()}.`;
+    const vector = await this.embed(factText);
+    const pointId = this.getDeterministicObjectUUID(canonicalName);
+
+    await this.client.upsert(COLLECTIONS.SPATIAL_MEMORY, {
+      wait: true,
+      points: [
+        {
+          id: pointId,
+          vector,
+          payload: {
+            sceneText: factText,
+            timestamp: new Date().toISOString(),
+            objectName: canonicalName,
+            category: 'object_location',
+          },
+        },
+      ],
+    });
+
+    this.logger.log(`[object:upsert] Saved location for "${canonicalName}": ${factText}`);
   }
 
   /**

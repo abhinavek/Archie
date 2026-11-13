@@ -45,6 +45,9 @@ document.addEventListener('click', primeSpeechSynthesis, { once: true });
 let running = false;
 let modelsLoaded = false;
 let scanTimer = null;
+let continuousVisionTimer = null;
+let lastContinuousAnalysisAt = 0;
+const CONTINUOUS_SAMPLE_INTERVAL_MS = 6000;
 let speechEnabled = true;
 let micEnabled = false;
 let isSpeaking = false;
@@ -271,6 +274,46 @@ function stopListeningTemp() {
     recognition.stop();
   } catch {
     // Ignore
+  }
+}
+
+function captureCurrentFrameBase64() {
+  if (!video || video.readyState < 2) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+  return dataUrl.split(',')[1] || null;
+}
+
+async function streamContinuousVision() {
+  if (!running || isSpeaking || isBusy || awaitingName) return;
+
+  const frameBase64 = captureCurrentFrameBase64();
+  if (!frameBase64) return;
+
+  // Stream current frame so VQA (inspect_camera) always has the newest snapshot
+  void postJson('/brain/frame', { frameBase64 }).catch(() => {});
+
+  // Periodic continuous environment understanding & proactive monologue check
+  const now = Date.now();
+  if (now - lastContinuousAnalysisAt >= CONTINUOUS_SAMPLE_INTERVAL_MS) {
+    lastContinuousAnalysisAt = now;
+    try {
+      const res = await postJson('/brain/continuous-scene', {
+        frameBase64,
+        personName: activePerson ?? undefined,
+      });
+
+      if (res?.proactiveSpeech && !isSpeaking && !isBusy) {
+        console.log('[Proactive Speech Triggered]:', res.proactiveSpeech);
+        await speak(res.proactiveSpeech);
+      }
+    } catch (e) {
+      console.debug('Continuous scene sample skipped:', e);
+    }
   }
 }
 
@@ -547,6 +590,7 @@ toggleCameraBtn.addEventListener('click', async () => {
   if (running) {
     running = false;
     clearInterval(scanTimer);
+    if (continuousVisionTimer) clearInterval(continuousVisionTimer);
     stopListeningTemp();
     const stream = video.srcObject;
     if (stream) stream.getTracks().forEach((t) => t.stop());
@@ -630,6 +674,7 @@ toggleCameraBtn.addEventListener('click', async () => {
     }
     setState(micEnabled ? 'Watching & Listening' : 'Watching');
     scanTimer = setInterval(scanFrame, SCAN_INTERVAL_MS);
+    continuousVisionTimer = setInterval(streamContinuousVision, 2000);
   } catch (err) {
     addMessage('system', `Startup error: ${err.message}`);
     setState('Error', false);

@@ -108,6 +108,24 @@ const BRAIN_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'inspect_camera',
+      description:
+        'Use this when the user asks what they are holding, asks what is in front of them, asks about objects in view, or asks you to check if something looks correct.',
+      parameters: {
+        type: 'object',
+        properties: {
+          user_question: {
+            type: 'string',
+            description: 'The visual question the user asked about what the camera is seeing.',
+          },
+        },
+        required: ['user_question'],
+      },
+    },
+  },
 ];
 
 @Injectable()
@@ -115,6 +133,9 @@ export class BrainService {
   private readonly logger = new Logger(BrainService.name);
   private readonly ollamaUrl: string;
   private readonly searxngUrl: string;
+
+  /** Latest live camera frame (base64 JPEG/PNG) cached in memory for instant VQA */
+  private latestCameraFrame: string | null = null;
 
   constructor(
     private readonly memory: MemoryService,
@@ -182,10 +203,15 @@ export class BrainService {
       ? `User's Current Physical Location Coordinates: Latitude ${clientLocation.latitude.toFixed(4)}, Longitude ${clientLocation.longitude.toFixed(4)}${clientLocation.city ? ` (${clientLocation.city})` : ''}.`
       : '';
 
+    const liveEnvironmentBlock = this.memory.getLiveEnvironmentContext();
+
     const systemPrompt = [
       ...ROBOT_RULES,
       speakerLine,
       locationLine,
+      '',
+      '[LIVE ENVIRONMENT (What you see through your camera right now)]',
+      liveEnvironmentBlock,
       '',
       'Recent Spatial & Factual Context (from long-term memory):',
       contextBlock,
@@ -210,7 +236,13 @@ export class BrainService {
       { role: 'user', content: trimmedPrompt },
     ];
 
+    const isVisualQuery =
+      /\b(?:what is this|what am i holding|what is in front|am i doing this right|is this correct|look at this|see this|can you see|what color|what object)\b/i.test(
+        trimmedPrompt,
+      );
+
     const isLiveInfoQuery =
+      isVisualQuery ||
       /\b(?:weather|temperature|forecast|rain|climate|search|news|who is|what is the latest|google|lookup|look up|nearby|restaurants|places|recommend|where is|find)\b/i.test(
         trimmedPrompt,
       );
@@ -270,6 +302,12 @@ export class BrainService {
               ? toolArgs.query.trim()
               : trimmedPrompt;
           toolResult = await this.executeSearxngSearch(q);
+        } else if (toolName === 'inspect_camera') {
+          const vq =
+            typeof toolArgs.user_question === 'string' && toolArgs.user_question.trim()
+              ? toolArgs.user_question.trim()
+              : trimmedPrompt;
+          toolResult = await this.executeCameraInspection(vq);
         } else {
           toolResult = `Tool ${toolName} not supported.`;
         }
@@ -535,6 +573,110 @@ export class BrainService {
       this.logger.warn(`[tool:searxng] Search failed (${Date.now() - t0}ms): ${msg}`);
       return `Could not retrieve live search results for "${query}" right now.`;
     }
+  }
+
+  /**
+   * Sets the freshest camera frame received from the continuous camera feed.
+   */
+  updateLatestFrame(frameBase64: string): void {
+    if (frameBase64 && frameBase64.length > 50) {
+      this.latestCameraFrame = frameBase64;
+    }
+  }
+
+  /**
+   * Inspects the latest camera frame with LLaVA to answer a visual question
+   * (e.g. "What is this?", "Am I doing this right?").
+   */
+  private async executeCameraInspection(question: string): Promise<string> {
+    if (!this.latestCameraFrame) {
+      return 'Camera feed is not available right now. Please make sure the robot camera is running.';
+    }
+
+    const t0 = Date.now();
+    this.logger.log(`[tool:inspect_camera] Asking ${VISION_MODEL}: "${question}"...`);
+    try {
+      const { data } = await firstValueFrom(
+        this.http.post<{ response?: string }>(`${this.ollamaUrl}/api/generate`, {
+          model: VISION_MODEL,
+          prompt: `Look closely at this image and answer the user question directly in 1-2 factual sentences: "${question}"`,
+          images: [this.latestCameraFrame],
+          stream: false,
+          options: { temperature: 0.1 },
+        }),
+      );
+
+      const analysis = data?.response?.trim() ?? 'I could not clearly see the object in front of the camera.';
+      this.logger.log(`[tool:inspect_camera] Vision analysis in ${Date.now() - t0}ms: ${analysis}`);
+      return `Visual Camera Inspection: ${analysis}`;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`[tool:inspect_camera] Failed (${Date.now() - t0}ms): ${msg}`);
+      return 'Could not inspect the camera frame right now.';
+    }
+  }
+
+  /**
+   * Processes an autonomous scene observation from continuous sampling:
+   * 1. Updates rolling spatial memory.
+   * 2. Checks if an object moved and updates its deterministic location.
+   * 3. Runs an "Inner Monologue" to decide if the robot should speak proactively,
+   *    returning the speech text or null if silent.
+   */
+  async processContinuousScene(
+    sceneDescription: string,
+    personName?: string,
+  ): Promise<string | null> {
+    const trimmed = sceneDescription.trim();
+    if (!trimmed) return null;
+
+    // 1. Update rolling spatial perception
+    this.memory.updateLiveSpatialMemory(trimmed);
+
+    // 2. Parse common object placements to update Qdrant with deterministic IDs
+    const objMatch = trimmed.match(
+      /(?:a|an|the)\s+([a-zA-Z\s]{3,20}?)\s+(?:is|has been placed|sitting|located)\s+(on|in|under|next to)\s+([^.,]+)/i,
+    );
+    if (objMatch && objMatch[1] && objMatch[3]) {
+      const objectName = objMatch[1].trim();
+      const location = `${objMatch[2]} ${objMatch[3].trim()}`;
+      void this.memory.memorizeObjectLocation(objectName, location).catch((err) => {
+        this.logger.warn(`Failed to upsert object location: ${err}`);
+      });
+    }
+
+    // 3. Inner monologue: should the robot speak unprompted?
+    try {
+      const thoughtPrompt = `[SYSTEM]
+You are ${ROBOT_NAME}, an autonomous home robot for Abhinav's family.
+You just observed this visual event in the room:
+"${trimmed}"
+Known person nearby: ${personName ?? 'Unknown'}
+
+Decide if this observation requires an immediate, helpful, friendly remark to the person.
+- If YES: output ONLY the short, warm sentence you want to say out loud (maximum 1 sentence).
+- If NO (nothing remarkable, normal activity, or nobody needs interruption): output strictly <SILENCE>.`;
+
+      const { data } = await firstValueFrom(
+        this.http.post<OllamaChatResponse>(`${this.ollamaUrl}/api/chat`, {
+          model: CHAT_MODEL,
+          stream: false,
+          options: { temperature: 0.2 },
+          messages: [{ role: 'user', content: thoughtPrompt }],
+        }),
+      );
+
+      const decision = data?.message?.content?.trim() ?? '<SILENCE>';
+      if (decision && !decision.includes('<SILENCE>')) {
+        this.logger.log(`[proactive:speech] Ayinu decided to say: "${decision}"`);
+        return decision;
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.debug(`Inner monologue skipped: ${msg}`);
+    }
+
+    return null;
   }
 
   /**
