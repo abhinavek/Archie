@@ -19,6 +19,9 @@ const overlay = document.getElementById('overlay');
 const cameraOffOverlay = document.getElementById('cameraOffOverlay');
 const previewTarget = document.getElementById('previewTarget');
 const previewStatus = document.getElementById('previewStatus');
+const flipCameraBtn = document.getElementById('flipCameraBtn');
+
+let currentFacingMode = 'user'; // 'user' (front selfie) or 'environment' (back camera)
 
 const listeningPill = document.getElementById('listeningPill');
 const listeningText = document.getElementById('listeningText');
@@ -795,12 +798,12 @@ toggleCameraBtn.addEventListener('click', async () => {
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        video: { facingMode: currentFacingMode, width: { ideal: 640 }, height: { ideal: 480 } },
         audio: true,
       });
     } catch (mediaErr) {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        video: { facingMode: currentFacingMode, width: { ideal: 640 }, height: { ideal: 480 } },
       });
     }
 
@@ -861,6 +864,38 @@ toggleCameraBtn.addEventListener('click', async () => {
     setListeningState('Error starting camera', false);
   }
 });
+
+// Flip Camera (Front / Back on Mobile devices)
+if (flipCameraBtn) {
+  flipCameraBtn.addEventListener('click', async () => {
+    currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+    console.log(`[Camera] Switched facing mode to: ${currentFacingMode}`);
+
+    if (running && video.srcObject) {
+      // Gracefully stop active video track and acquire new one
+      const oldStream = video.srcObject;
+      const tracks = oldStream.getVideoTracks();
+      tracks.forEach((t) => t.stop());
+
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: currentFacingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+        });
+
+        // Replace video track
+        const newTrack = newStream.getVideoTracks()[0];
+        const combined = new MediaStream([newTrack, ...oldStream.getAudioTracks()]);
+        video.srcObject = combined;
+        await video.play().catch(() => {});
+        previewStatus.textContent = currentFacingMode === 'environment' ? 'Back camera' : 'Front camera';
+      } catch (err) {
+        console.warn('[Camera] Failed to switch camera facingMode:', err);
+      }
+    } else {
+      previewStatus.textContent = currentFacingMode === 'environment' ? 'Mode: Back' : 'Mode: Front';
+    }
+  });
+}
 
 toggleVoiceBtn.addEventListener('click', () => {
   micEnabled = !micEnabled;
