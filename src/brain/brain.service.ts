@@ -717,22 +717,33 @@ You are ${ROBOT_NAME}, an autonomous home robot for Abhinav's family. Look at th
 
       // Update Qdrant & rolling spatial memory with the factual description
       if (factualDescription) {
+        // 1. Update live rolling short-term perception
         this.memory.updateLiveSpatialMemory(factualDescription);
 
-        // Check for moving object placements and update deterministic locations
+        // 2. Persist full scene observation to Qdrant spatial memory
+        void this.memory.memorizeScene(factualDescription, { category: 'spatial_observation' }).catch((err) => {
+          this.logger.warn(`Failed to memorize full spatial scene: ${err}`);
+        });
+
+        // 3. Extract specific object relationships for deterministic overwrite
+        // Matches sentences like:
+        // "A black steering wheel on top of a desk"
+        // "A red mug is on the table"
+        // "Keys sitting near the laptop"
         const objMatch = factualDescription.match(
-          /(?:a|an|the)\s+([a-zA-Z\s]{3,20}?)\s+(?:is|has been placed|sitting|located)\s+(on|in|under|next to)\s+([^.,]+)/i,
+          /(?:a|an|the)\s+([a-zA-Z0-9\s]{2,30}?)\s+(?:is|are|has been placed|sitting|located|standing)?\s*(on top of|on|in|under|next to|near|beside|in front of|behind|by|above)\s+([^.,;]+)/i,
         );
+
         if (objMatch && objMatch[1] && objMatch[3]) {
           const objectName = objMatch[1].trim();
-          const location = `${objMatch[2]} ${objMatch[3].trim()}`;
+          const location = `${objMatch[2].trim()} ${objMatch[3].trim()}`;
           void this.memory.memorizeObjectLocation(objectName, location).catch((err) => {
             this.logger.warn(`Failed to upsert object location: ${err}`);
           });
         }
       }
 
-      this.logger.log(`[analyzeLiveScene] Single-pass vision completed in ${Date.now() - t0}ms`);
+      this.logger.log(`[analyzeLiveScene] Single-pass vision completed in ${Date.now() - t0}ms : ${factualDescription}`);
       return proactiveSpeech;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
