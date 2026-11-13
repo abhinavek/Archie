@@ -6,7 +6,7 @@ import { MemoryService } from '../memory/memory.service.js';
 import { console } from 'inspector';
 
 const CHAT_MODEL = process.env.CHAT_MODEL || 'llama3.2:3b';
-const VISION_MODEL = process.env.VISION_MODEL || 'llama3.2-vision';
+const VISION_MODEL = process.env.VISION_MODEL || 'moondream';
 const ROBOT_NAME = 'Ayinu';
 
 /**
@@ -677,6 +677,68 @@ Decide if this observation requires an immediate, helpful, friendly remark to th
     }
 
     return null;
+  }
+
+  /**
+   * Single-pass vision analysis (Decoupled WebSocket Pipeline).
+   * Analyzes the frame, updates rolling spatial memory, and returns proactive speech if warranted.
+   */
+  async analyzeLiveScene(imageBase64: string): Promise<string | null> {
+    const t0 = Date.now();
+    try {
+      const prompt = `[SYSTEM]
+You are ${ROBOT_NAME}, an autonomous home robot for Abhinav's family. Look at the current camera feed.
+1. Output a strictly factual, 1-sentence description of the objects/people in the room.
+2. If a person is present and doing something that requires a helpful or friendly greeting, output a second sentence starting with "SPEAK: " followed by what you want to say out loud.
+3. If no one needs a greeting, output ONLY the factual description.`;
+
+      const { data } = await firstValueFrom(
+        this.http.post<{ response?: string }>(`${this.ollamaUrl}/api/generate`, {
+          model: VISION_MODEL,
+          prompt,
+          images: [imageBase64],
+          stream: false,
+          options: { temperature: 0.1 },
+        }),
+      );
+
+      const responseText = data?.response?.trim() ?? '';
+      if (!responseText) return null;
+
+      let factualDescription = responseText;
+      let proactiveSpeech: string | null = null;
+
+      // Parse the single-pass dual-output
+      if (responseText.includes('SPEAK:')) {
+        const parts = responseText.split('SPEAK:');
+        factualDescription = parts[0].trim();
+        proactiveSpeech = parts[1].trim();
+      }
+
+      // Update Qdrant & rolling spatial memory with the factual description
+      if (factualDescription) {
+        this.memory.updateLiveSpatialMemory(factualDescription);
+
+        // Check for moving object placements and update deterministic locations
+        const objMatch = factualDescription.match(
+          /(?:a|an|the)\s+([a-zA-Z\s]{3,20}?)\s+(?:is|has been placed|sitting|located)\s+(on|in|under|next to)\s+([^.,]+)/i,
+        );
+        if (objMatch && objMatch[1] && objMatch[3]) {
+          const objectName = objMatch[1].trim();
+          const location = `${objMatch[2]} ${objMatch[3].trim()}`;
+          void this.memory.memorizeObjectLocation(objectName, location).catch((err) => {
+            this.logger.warn(`Failed to upsert object location: ${err}`);
+          });
+        }
+      }
+
+      this.logger.log(`[analyzeLiveScene] Single-pass vision completed in ${Date.now() - t0}ms`);
+      return proactiveSpeech;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`[analyzeLiveScene] Vision model "${VISION_MODEL}" error: ${msg}`);
+      return null;
+    }
   }
 
   /**

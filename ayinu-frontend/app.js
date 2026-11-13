@@ -446,41 +446,72 @@ async function postJson(path, body) {
   return res.json();
 }
 
-function captureCurrentFrameBase64() {
-  if (!video || video.readyState < 2) return null;
+// WebSocket Client with Backpressure (Decoupled Vision Pipeline)
+let socket = null;
+let aiStatus = 'idle';
+
+function initWebSocket() {
+  if (typeof io !== 'function') {
+    console.warn('[WebSocket] socket.io client not loaded.');
+    return;
+  }
+  socket = io(API_BASE_URL, {
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+  });
+
+  socket.on('connect', () => {
+    console.log('[WebSocket] Connected to backend! ID:', socket.id);
+  });
+
+  socket.on('ai-status', (status) => {
+    aiStatus = status;
+    console.log('[WebSocket] Backend AI status:', status);
+    if (status === 'thinking' && !isSpeaking) {
+      setListeningState('Thinking… (Observing room)', true);
+    } else if (status === 'idle' && running && !isSpeaking) {
+      setListeningState(micEnabled ? 'Listening · Always on' : 'Ready', micEnabled);
+    }
+  });
+
+  socket.on('speak', async (text) => {
+    console.log('[WebSocket Proactive Speech]:', text);
+    if (!isSpeaking && !isBusy) {
+      await speak(text);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.warn('[WebSocket] Disconnected from backend.');
+  });
+}
+initWebSocket();
+
+function captureCurrentFrameBlob(callback) {
+  if (!video || video.readyState < 2) return;
   const canvas = document.createElement('canvas');
   canvas.width = video.videoWidth || 640;
   canvas.height = video.videoHeight || 480;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-  return dataUrl.split(',')[1] || null;
+  canvas.toBlob((blob) => {
+    if (blob) callback(blob);
+  }, 'image/jpeg', 0.6);
 }
 
-async function streamContinuousVision() {
+function streamContinuousVision() {
   if (!running || isSpeaking || isBusy || awaitingName) return;
 
-  const frameBase64 = captureCurrentFrameBase64();
-  if (!frameBase64) return;
+  captureCurrentFrameBlob((blob) => {
+    if (!blob) return;
 
-  void postJson('/brain/frame', { frameBase64 }).catch(() => {});
-
-  const now = Date.now();
-  if (now - lastContinuousAnalysisAt >= CONTINUOUS_SAMPLE_INTERVAL_MS) {
-    lastContinuousAnalysisAt = now;
-    try {
-      const res = await postJson('/brain/continuous-scene', {
-        frameBase64,
-        personName: activePerson ?? undefined,
-      });
-
-      if (res?.proactiveSpeech && !isSpeaking && !isBusy) {
-        await speak(res.proactiveSpeech);
-      }
-    } catch {
-      // Ignore background analysis failures
+    // Gatekeeper Backpressure: If server is idle, transmit raw binary ArrayBuffer over WebSocket
+    if (socket && socket.connected && aiStatus === 'idle') {
+      blob.arrayBuffer().then((buffer) => {
+        socket.emit('stream-frame', buffer);
+      }).catch(() => {});
     }
-  }
+  });
 }
 
 async function scanFrame() {
@@ -779,7 +810,8 @@ toggleCameraBtn.addEventListener('click', async () => {
     }
     setListeningState('Listening · Always on', true);
     scanTimer = setInterval(scanFrame, SCAN_INTERVAL_MS);
-    continuousVisionTimer = setInterval(streamContinuousVision, 2000);
+    // Stream at high frame-rate cadence (every 300ms) with WebSocket backpressure
+    continuousVisionTimer = setInterval(streamContinuousVision, 300);
   } catch (err) {
     appendChatBubble('robot', `Startup error: ${err.message}`);
     setListeningState('Error starting camera', false);

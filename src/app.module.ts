@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { BrainModule } from './brain/brain.module.js';
+import { GatewayModule } from './gateway/gateway.module.js';
 import { MemoryModule } from './memory/memory.module.js';
 
 function validateEnv(config: Record<string, unknown>): Record<string, unknown> {
@@ -26,6 +27,7 @@ function validateEnv(config: Record<string, unknown>): Record<string, unknown> {
 
     MemoryModule,
     BrainModule,
+    GatewayModule,
   ],
   controllers: [AppController],
   providers: [AppService],
