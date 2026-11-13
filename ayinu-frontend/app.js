@@ -1,5 +1,4 @@
-// Determine backend host & scheme dynamically:
-// If frontend is opened over HTTPS, try HTTPS backend; otherwise default to HTTP.
+// Determine backend host & scheme dynamically
 const API_PORT = 3001;
 const API_BASE_URL = window.location.protocol === 'https:'
   ? `https://${window.location.hostname}:${API_PORT}`
@@ -14,22 +13,42 @@ const FACE_CHANGE_STREAK_REQUIRED = 3;
 const UNKNOWN_CONFIRMATIONS_REQUIRED = 3;
 const SCAN_INTERVAL_MS = 1_200;
 
+// DOM Elements
 const video = document.getElementById('webcam');
 const overlay = document.getElementById('overlay');
-const statusDot = document.getElementById('statusDot');
-const robotStateEl = document.getElementById('robotState');
-const personBadge = document.getElementById('personBadge');
+const cameraOffOverlay = document.getElementById('cameraOffOverlay');
+const previewTarget = document.getElementById('previewTarget');
+const previewStatus = document.getElementById('previewStatus');
+
+const listeningPill = document.getElementById('listeningPill');
+const listeningText = document.getElementById('listeningText');
+const dockCaption = document.getElementById('dockCaption');
+
+const latestUserText = document.getElementById('latestUserText');
+const latestRobotText = document.getElementById('latestRobotText');
+
 const toggleCameraBtn = document.getElementById('toggleCameraBtn');
 const toggleVoiceBtn = document.getElementById('toggleVoiceBtn');
 const toggleSpeechBtn = document.getElementById('toggleSpeechBtn');
 const languageSelect = document.getElementById('languageSelect');
-const registerForm = document.getElementById('registerForm');
-const personNameInput = document.getElementById('personNameInput');
-const memorizeForm = document.getElementById('memorizeForm');
-const sceneInput = document.getElementById('sceneInput');
+
+const openChatBtn = document.getElementById('openChatBtn');
+const closeChatBtn = document.getElementById('closeChatBtn');
+const chatPopupBackdrop = document.getElementById('chatPopupBackdrop');
+const chatLog = document.getElementById('chatLog');
 const askForm = document.getElementById('askForm');
 const promptInput = document.getElementById('promptInput');
-const chatLog = document.getElementById('chatLog');
+
+const registerForm = document.getElementById('registerForm');
+const personNameForm = document.getElementById('personNameForm');
+const personNameInput = document.getElementById('personNameInput');
+
+// Canvas Waveform Animation
+const waveCanvas = document.getElementById('waveCanvas');
+let waveCtx = null;
+if (waveCanvas) {
+  waveCtx = waveCanvas.getContext('2d');
+}
 
 // Pre-warm SpeechSynthesis on user interaction (mandatory for iOS WebKit)
 function primeSpeechSynthesis() {
@@ -48,8 +67,9 @@ let scanTimer = null;
 let continuousVisionTimer = null;
 let lastContinuousAnalysisAt = 0;
 const CONTINUOUS_SAMPLE_INTERVAL_MS = 6000;
+
 let speechEnabled = true;
-let micEnabled = false;
+let micEnabled = true;
 let isSpeaking = false;
 let isBusy = false;
 
@@ -84,32 +104,108 @@ const SpeechRecognitionCtor =
   window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
 
-function setState(label, active = running) {
-  robotStateEl.textContent = label;
-  statusDot.classList.toggle('active', active);
+// ==========================================================================
+// Waveform Animation (Figma Voice frequency lines)
+// ==========================================================================
+let wavePhase = 0;
+function drawWave() {
+  if (!waveCtx || !waveCanvas) return;
+  const w = waveCanvas.width;
+  const h = waveCanvas.height;
+  waveCtx.clearRect(0, 0, w, h);
+
+  const colors = [
+    'rgba(215, 200, 240, 0.35)',
+    'rgba(190, 175, 230, 0.45)',
+    'rgba(170, 150, 220, 0.55)',
+    'rgba(145, 120, 210, 0.65)',
+    'rgba(125, 95, 200, 0.75)',
+    'rgba(110, 80, 185, 0.85)',
+    'rgba(95, 65, 170, 0.95)',
+  ];
+
+  const isActive = running && (micEnabled || isSpeaking);
+  const amplitudeBase = isSpeaking ? 34 : (isActive ? 16 : 6);
+  wavePhase += isSpeaking ? 0.08 : (isActive ? 0.04 : 0.015);
+
+  colors.forEach((col, idx) => {
+    waveCtx.beginPath();
+    waveCtx.strokeStyle = col;
+    waveCtx.lineWidth = 2.0;
+
+    const offset = idx * 0.45;
+    const amp = amplitudeBase * (0.6 + (idx * 0.12));
+
+    for (let x = 0; x < w; x += 4) {
+      const normalX = x / w;
+      // Bell envelope so edges taper to zero
+      const envelope = Math.sin(normalX * Math.PI);
+      const y = (h / 2) + Math.sin((normalX * 4 * Math.PI) + wavePhase + offset) * amp * envelope;
+
+      if (x === 0) waveCtx.moveTo(x, y);
+      else waveCtx.lineTo(x, y);
+    }
+    waveCtx.stroke();
+  });
+
+  requestAnimationFrame(drawWave);
+}
+requestAnimationFrame(drawWave);
+
+// ==========================================================================
+// Status & UI Updaters
+// ==========================================================================
+function setListeningState(text, active = false) {
+  if (listeningText) listeningText.textContent = text;
+  if (listeningPill) listeningPill.classList.toggle('active', active);
+  if (dockCaption) dockCaption.textContent = text;
 }
 
-function addMessage(role, text) {
-  const div = document.createElement('div');
-  div.className = `msg ${role}`;
-  div.textContent = text;
-  chatLog.appendChild(div);
+function updateLatestExchange(speaker, text) {
+  if (speaker === 'user' && latestUserText) {
+    latestUserText.textContent = text;
+  } else if (speaker === 'robot' && latestRobotText) {
+    latestRobotText.textContent = text;
+  }
+}
+
+function appendChatBubble(role, text) {
+  if (!chatLog) return;
+  const isUser = role === 'user';
+  const group = document.createElement('div');
+  group.className = `chat-bubble-group ${isUser ? 'user-group' : 'aura-group'}`;
+
+  const label = document.createElement('span');
+  label.className = 'bubble-role-label';
+  label.textContent = isUser ? (activePerson ? activePerson.toUpperCase() : 'YOU') : 'AURA';
+
+  const bubble = document.createElement('div');
+  bubble.className = `chat-bubble ${isUser ? 'user-bubble' : 'aura-bubble'}`;
+  bubble.textContent = text;
+
+  group.appendChild(label);
+  group.appendChild(bubble);
+  chatLog.appendChild(group);
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
+// ==========================================================================
+// Speech Synthesis
+// ==========================================================================
 async function speak(text) {
-  addMessage('robot', text);
+  updateLatestExchange('robot', text);
+  appendChatBubble('robot', text);
+
   if (!speechEnabled || !('speechSynthesis' in window)) return;
 
-  // On iOS, calling cancel() right before speak() can silently drop speech synthesis
   isSpeaking = true;
   stopListeningTemp();
-  setState('Speaking…');
+  setListeningState('Speaking…', true);
 
   await new Promise((resolve) => {
     try {
       const utter = new SpeechSynthesisUtterance(text);
-      const selectedLang = languageSelect ? languageSelect.value : 'ml-IN';
+      const selectedLang = languageSelect ? languageSelect.value : 'en-IN';
       
       const voices = window.speechSynthesis.getVoices() || [];
       const exactVoice = voices.find((v) => v.lang.toLowerCase() === selectedLang.toLowerCase());
@@ -122,7 +218,6 @@ async function speak(text) {
         utter.voice = prefixVoice;
         utter.lang = prefixVoice.lang;
       } else {
-        // Fallback to Malayalam locale string or default English if unavailable on iOS
         utter.lang = selectedLang;
       }
 
@@ -136,71 +231,61 @@ async function speak(text) {
         resolve();
       };
 
-      // Safety timeout: iOS speech synthesis occasionally never fires onend
       const estimatedDurationMs = Math.max(3000, (text.length / 10) * 1000);
       timer = setTimeout(() => {
-        console.warn('[Speech] Fallback timeout triggered for onend');
         finish();
       }, estimatedDurationMs);
 
       utter.onend = finish;
       utter.onerror = (e) => {
-        console.warn('[Speech] Utterance error:', e);
         finish();
       };
 
-      // Resume in case iOS audio context was paused
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
 
       window.speechSynthesis.speak(utter);
     } catch (err) {
-      console.warn('[Speech] speak() exception:', err);
       resolve();
     }
   });
 
   isSpeaking = false;
   if (running) {
-    setState(micEnabled ? 'Watching & Listening' : 'Watching');
+    setListeningState(micEnabled ? 'Listening' : 'Ready', micEnabled);
     if (micEnabled) startListening();
   }
 }
 
+// ==========================================================================
+// Speech Recognition (Web Speech API)
+// ==========================================================================
 function initRecognition() {
   if (!SpeechRecognitionCtor) return null;
   const rec = new SpeechRecognitionCtor();
-  rec.lang = languageSelect ? languageSelect.value : 'ml-IN';
+  rec.lang = languageSelect ? languageSelect.value : 'en-IN';
   rec.interimResults = false;
   rec.continuous = true;
 
   rec.onstart = () => {
-    console.log('[SpeechRecognition] Active and listening in:', rec.lang);
+    console.log('[SpeechRecognition] Active in:', rec.lang);
   };
 
   rec.onerror = (e) => {
-    console.warn('[SpeechRecognition] Error:', e.error, e.message);
+    console.warn('[SpeechRecognition] Error:', e.error);
     if (e.error === 'not-allowed') {
-      addMessage('system', 'Microphone permission denied in browser.');
-    } else if (e.error === 'network') {
-      console.warn('[SpeechRecognition] Network error on STT service. Re-trying...');
+      appendChatBubble('robot', 'Microphone permission denied.');
     }
   };
 
   rec.onresult = async (event) => {
-    console.log('[SpeechRecognition] Received speech event, result count:', event.results.length);
     const last = event.results[event.results.length - 1];
-    if (!last?.isFinal) {
-      console.log('[SpeechRecognition] Interim transcript:', last?.[0]?.transcript);
-      return;
-    }
+    if (!last?.isFinal) return;
     const transcript = last[0].transcript.trim();
-    console.log('[SpeechRecognition] Final transcript:', transcript);
     if (!transcript || isSpeaking) return;
 
     if (awaitingName && pendingDescriptor) {
-      // Look for intentional name statements like "my name is abhinav" or Malayalam "എന്റെ പേര് ..."
       const explicitMatch = transcript.match(
         /\b(?:my name is|i am|i'm|call me|name's|എന്റെ പേര്|പേര്)\s+([a-zA-Z\u0D00-\u0D7F\s]{2,30})/i,
       );
@@ -211,7 +296,6 @@ function initRecognition() {
           return;
         }
       }
-      // If it's short (1-2 words, under 20 chars), accept it directly as a spoken name
       const words = transcript.split(/\s+/).filter(Boolean);
       if (words.length <= 2 && transcript.length <= 20) {
         const cleaned = transcript.replace(/[^\w\s\u0D00-\u0D7F]/gi, '').trim();
@@ -220,12 +304,9 @@ function initRecognition() {
           return;
         }
       }
-      // Otherwise ignore random background conversation while waiting for the name
-      console.log('[Registration] Ignored background speech while waiting for name:', transcript);
       return;
     }
 
-    // Allow user to correct/rename at any time
     const renameMatch = transcript.match(
       /\b(?:actually\s+)?(?:my name is|call me|change my name to|എന്റെ പേര്|പേര് മാറ്റുക)\s+([a-zA-Z\u0D00-\u0D7F\s]{2,30})/i,
     );
@@ -242,14 +323,12 @@ function initRecognition() {
   };
 
   rec.onend = () => {
-    console.log('[SpeechRecognition] onend fired. running:', running, 'micEnabled:', micEnabled, 'isSpeaking:', isSpeaking);
     if (running && micEnabled && !isSpeaking) {
       setTimeout(() => {
         try {
           rec.start();
-          console.log('[SpeechRecognition] Restarted listening');
-        } catch (err) {
-          console.log('[SpeechRecognition] Restart attempt error:', err.message);
+        } catch {
+          // Ignore if already active
         }
       }, 200);
     }
@@ -264,7 +343,7 @@ function startListening() {
   try {
     recognition.start();
   } catch {
-    // Ignore duplicate start
+    // Ignore duplicate
   }
 }
 
@@ -277,52 +356,13 @@ function stopListeningTemp() {
   }
 }
 
-function captureCurrentFrameBase64() {
-  if (!video || video.readyState < 2) return null;
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth || 640;
-  canvas.height = video.videoHeight || 480;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-  return dataUrl.split(',')[1] || null;
-}
-
-async function streamContinuousVision() {
-  if (!running || isSpeaking || isBusy || awaitingName) return;
-
-  const frameBase64 = captureCurrentFrameBase64();
-  if (!frameBase64) return;
-
-  // Stream current frame so VQA (inspect_camera) always has the newest snapshot
-  void postJson('/brain/frame', { frameBase64 }).catch(() => {});
-
-  // Periodic continuous environment understanding & proactive monologue check
-  const now = Date.now();
-  if (now - lastContinuousAnalysisAt >= CONTINUOUS_SAMPLE_INTERVAL_MS) {
-    lastContinuousAnalysisAt = now;
-    try {
-      const res = await postJson('/brain/continuous-scene', {
-        frameBase64,
-        personName: activePerson ?? undefined,
-      });
-
-      if (res?.proactiveSpeech && !isSpeaking && !isBusy) {
-        console.log('[Proactive Speech Triggered]:', res.proactiveSpeech);
-        await speak(res.proactiveSpeech);
-      }
-    } catch (e) {
-      console.debug('Continuous scene sample skipped:', e);
-    }
-  }
-}
-
+// ==========================================================================
+// Vision Models & Face Recognition
+// ==========================================================================
 async function loadFaceModels() {
   if (modelsLoaded) return;
-  if (!window.faceapi) {
-    throw new Error('face-api.js failed to load from CDN.');
-  }
-  setState('Loading vision models…', false);
+  if (!window.faceapi) throw new Error('face-api.js failed to load.');
+  setListeningState('Loading vision models…', false);
   await Promise.all([
     faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
     faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
@@ -344,6 +384,43 @@ async function postJson(path, body) {
   return res.json();
 }
 
+function captureCurrentFrameBase64() {
+  if (!video || video.readyState < 2) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+  return dataUrl.split(',')[1] || null;
+}
+
+async function streamContinuousVision() {
+  if (!running || isSpeaking || isBusy || awaitingName) return;
+
+  const frameBase64 = captureCurrentFrameBase64();
+  if (!frameBase64) return;
+
+  void postJson('/brain/frame', { frameBase64 }).catch(() => {});
+
+  const now = Date.now();
+  if (now - lastContinuousAnalysisAt >= CONTINUOUS_SAMPLE_INTERVAL_MS) {
+    lastContinuousAnalysisAt = now;
+    try {
+      const res = await postJson('/brain/continuous-scene', {
+        frameBase64,
+        personName: activePerson ?? undefined,
+      });
+
+      if (res?.proactiveSpeech && !isSpeaking && !isBusy) {
+        await speak(res.proactiveSpeech);
+      }
+    } catch {
+      // Ignore background analysis failures
+    }
+  }
+}
+
 async function scanFrame() {
   if (!running || isBusy || isSpeaking || video.readyState < 2) return;
 
@@ -363,14 +440,12 @@ async function scanFrame() {
   const now = Date.now();
 
   if (!detection) {
-    // If no face is detected, do NOT clear activePerson if we already recognized someone.
-    // Keep them locked in until a completely different face appears.
     if (presenceCache.lastSeenName && presenceCache.lastSeenName !== 'Unknown') {
-      personBadge.textContent = `Present: ${presenceCache.lastSeenName}`;
+      previewTarget.textContent = presenceCache.lastSeenName;
+      previewStatus.textContent = 'In view';
       return;
     }
 
-    // Only clear if an unknown person dropped out past cooldown
     if (
       presenceCache.lastSeenName === 'Unknown' &&
       now - presenceCache.lastSeenTimestamp > PRESENCE_COOLDOWN_MS
@@ -380,111 +455,90 @@ async function scanFrame() {
       presenceCache.differentFaceStreak = 0;
       presenceCache.unmatchedConfirmations = 0;
       activePerson = null;
-      awaitingName = false;
       pendingDescriptor = null;
+      awaitingName = false;
       registerForm.hidden = true;
-      personBadge.textContent = 'No person detected';
-    } else if (presenceCache.lastSeenName === 'Unknown') {
-      personBadge.textContent = 'Waiting for name…';
-    } else {
-      personBadge.textContent = 'No person detected';
+      previewTarget.textContent = 'You';
+      previewStatus.textContent = 'Camera active';
     }
     return;
   }
 
+  // Draw face bounding box
   const box = detection.detection.box;
-  ctx.strokeStyle = activePerson ? '#22c55e' : '#f59e0b';
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#817096';
+  ctx.lineWidth = 2;
   ctx.strokeRect(box.x, box.y, box.width, box.height);
 
-  // Person is in frame — refresh presence clock
-  presenceCache.lastSeenTimestamp = now;
-
-  // Keep latest descriptor fresh in case we are waiting for an unknown user's name
   const descriptor = Array.from(detection.descriptor);
-  if (awaitingName) {
-    pendingDescriptor = descriptor;
-    return;
-  }
 
-  // Once a person is identified, never call /recognize again unless a different face shows up
-  if (
-    presenceCache.lastSeenName &&
-    presenceCache.lastSeenName !== 'Unknown' &&
-    presenceCache.lastDescriptor
-  ) {
-    const dist = euclideanDistance(descriptor, presenceCache.lastDescriptor);
+  if (presenceCache.lastDescriptor) {
+    const dist = euclideanDistance(presenceCache.lastDescriptor, descriptor);
     if (dist < FACE_CHANGE_THRESHOLD) {
       presenceCache.differentFaceStreak = 0;
+      presenceCache.unmatchedConfirmations = 0;
+      presenceCache.lastSeenTimestamp = now;
+      if (presenceCache.lastSeenName && presenceCache.lastSeenName !== 'Unknown') {
+        previewTarget.textContent = presenceCache.lastSeenName;
+        previewStatus.textContent = 'Recognized';
+      }
       return;
-    }
-    presenceCache.differentFaceStreak += 1;
-    if (presenceCache.differentFaceStreak < FACE_CHANGE_STREAK_REQUIRED) {
-      return;
+    } else {
+      presenceCache.differentFaceStreak += 1;
+      if (presenceCache.differentFaceStreak < FACE_CHANGE_STREAK_REQUIRED) {
+        return;
+      }
     }
   }
-
-  // Suspend vision API calls if another API call (e.g. ask/register/memorize) started
-  if (isBusy || isSpeaking) return;
 
   isBusy = true;
   try {
     const result = await postJson('/brain/faces/recognize', { descriptor });
+    presenceCache.lastDescriptor = descriptor;
+    presenceCache.lastSeenTimestamp = now;
+    presenceCache.differentFaceStreak = 0;
 
     if (result.matched && result.name) {
       presenceCache.unmatchedConfirmations = 0;
-      presenceCache.differentFaceStreak = 0;
-      presenceCache.lastDescriptor = descriptor;
-      const isNewArrival = presenceCache.lastSeenName !== result.name;
+      const isNewPerson = presenceCache.lastSeenName !== result.name;
       presenceCache.lastSeenName = result.name;
-
       activePerson = result.name;
       awaitingName = false;
       pendingDescriptor = null;
       registerForm.hidden = true;
-      personBadge.textContent = `Recognized: ${result.name}`;
+      previewTarget.textContent = result.name;
+      previewStatus.textContent = 'Verified';
 
       const lastGreet = lastGreetedAt.get(result.name) ?? 0;
-      if (isNewArrival && now - lastGreet > GREET_COOLDOWN_MS) {
+      if (isNewPerson || now - lastGreet > GREET_COOLDOWN_MS) {
         lastGreetedAt.set(result.name, now);
-        setState(`Greeting ${result.name}…`);
-        let greeting = `Hello ${result.name}! My name is Ayinu. Good to see you again—what can I help you with?`;
+        setListeningState(`Greeting ${result.name}…`, true);
+        let greeting = `Hello ${result.name}! Good to see you again—what can I help you with?`;
         try {
           const { answer } = await postJson('/brain/engage', {
             personName: result.name,
           });
           if (answer?.trim()) greeting = answer;
         } catch {
-          // Fall back to instant spoken greeting if Ollama is unavailable
+          // Fall back to local greeting
         }
         await speak(greeting);
       }
     } else {
-      // Require 3 consecutive unmatched frames before declaring someone "not in db".
-      // This prevents bad angles/lighting from triggering "Who is this?" on registered users.
       presenceCache.unmatchedConfirmations += 1;
-      console.log(
-        `[Vision] Unmatched face confirmation ${presenceCache.unmatchedConfirmations}/${UNKNOWN_CONFIRMATIONS_REQUIRED}`,
-      );
-
       if (presenceCache.unmatchedConfirmations < UNKNOWN_CONFIRMATIONS_REQUIRED) {
-        // Keep previous recognized state while confirming
-        if (presenceCache.lastSeenName && presenceCache.lastSeenName !== 'Unknown') {
-          personBadge.textContent = `Verifying… (${presenceCache.lastSeenName})`;
-        } else {
-          personBadge.textContent = 'Verifying face…';
-        }
+        previewStatus.textContent = 'Verifying…';
         return;
       }
 
-      // 3 consecutive unmatched confirmations reached — this is genuinely a new/unregistered face
       const isNewUnknown = presenceCache.lastSeenName !== 'Unknown';
       presenceCache.lastSeenName = 'Unknown';
       presenceCache.lastDescriptor = null;
       presenceCache.differentFaceStreak = 0;
       activePerson = null;
       pendingDescriptor = descriptor;
-      personBadge.textContent = 'Unknown person';
+      previewTarget.textContent = 'Unknown';
+      previewStatus.textContent = 'New person';
       registerForm.hidden = false;
 
       if (isNewUnknown && !awaitingName) {
@@ -493,10 +547,7 @@ async function scanFrame() {
       }
     }
   } catch (err) {
-    const hint = err.message.includes('(404)')
-      ? ' — restart the NestJS backend (npm run start:dev) so /brain/faces/recognize is loaded.'
-      : '';
-    addMessage('system', `Vision error: ${err.message}${hint}`);
+    console.warn('Vision scan error:', err);
   } finally {
     isBusy = false;
   }
@@ -505,16 +556,12 @@ async function scanFrame() {
 async function completeRegistration(name) {
   if (!pendingDescriptor || isBusy) return;
   isBusy = true;
-  console.time('[Registration Flow]');
-  console.log('[Registration] Sending /brain/faces/register for:', name);
   try {
-    const t0 = performance.now();
     await postJson('/brain/faces/register', {
       name,
       descriptor: pendingDescriptor,
       audioBase64: lastAudioBase64 || undefined,
     });
-    console.log(`[Registration] /brain/faces/register took ${(performance.now() - t0).toFixed(1)}ms`);
 
     const now = Date.now();
     presenceCache.lastSeenName = name;
@@ -527,30 +574,30 @@ async function completeRegistration(name) {
     registerForm.hidden = true;
     personNameInput.value = '';
     lastGreetedAt.set(name, now);
-    personBadge.textContent = `Recognized: ${name}`;
-    console.log('[Registration] Starting speech response...');
-    await speak(`Nice to meet you, ${name}! I'll remember your face. How can I help you today?`);
-    console.timeEnd('[Registration Flow]');
+    previewTarget.textContent = name;
+    previewStatus.textContent = 'Registered';
+    await speak(`Nice to meet you, ${name}! I will remember you. How can I help you today?`);
   } catch (err) {
-    console.error('[Registration] Failed:', err);
-    addMessage('system', `Registration failed: ${err.message}`);
+    appendChatBubble('robot', `Registration error: ${err.message}`);
   } finally {
     isBusy = false;
   }
 }
 
+// ==========================================================================
+// Prompt & Dialogue Pipeline
+// ==========================================================================
 async function handleUserPrompt(prompt) {
   if (isBusy) return;
   const cleanPrompt = prompt.trim();
   if (!cleanPrompt) return;
 
-  const promptStart = performance.now();
-  console.log(`%c[Prompt Start] "${cleanPrompt}"`, 'color: #38bdf8; font-weight: bold;');
-  addMessage('user', cleanPrompt);
+  updateLatestExchange('user', cleanPrompt);
+  appendChatBubble('user', cleanPrompt);
+
   isBusy = true;
-  setState('Thinking…');
+  setListeningState('Thinking…', true);
   try {
-    const t0 = performance.now();
     const { answer, identifiedSpeaker } = await postJson('/brain/ask', {
       prompt: cleanPrompt,
       personName: activePerson ?? undefined,
@@ -558,55 +605,56 @@ async function handleUserPrompt(prompt) {
       location: clientLocation || undefined,
       history: conversationHistory,
     });
-    console.log(`%c[Prompt API] /brain/ask returned in ${(performance.now() - t0).toFixed(1)}ms`, 'color: #22c55e;');
 
-    // If voice recognition identified the speaker, lock them in as activePerson
     if (identifiedSpeaker && !activePerson) {
       activePerson = identifiedSpeaker;
       presenceCache.lastSeenName = identifiedSpeaker;
       presenceCache.lastSeenTimestamp = Date.now();
-      personBadge.textContent = `Recognized by Voice: ${identifiedSpeaker}`;
+      previewTarget.textContent = identifiedSpeaker;
     }
 
-    // Record turn in rolling local history for immediate conversational context
     conversationHistory.push({ role: 'user', content: cleanPrompt });
     conversationHistory.push({ role: 'assistant', content: answer });
     while (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
       conversationHistory.shift();
     }
 
-    const tSpeech = performance.now();
     await speak(answer);
-    console.log(`%c[Prompt Total] End-to-end turn took ${(performance.now() - promptStart).toFixed(1)}ms (TTS: ${(performance.now() - tSpeech).toFixed(1)}ms)`, 'color: #f59e0b; font-weight: bold;');
   } catch (err) {
-    addMessage('system', `Brain error: ${err.message}`);
-    setState(running ? 'Watching' : 'Idle');
+    appendChatBubble('robot', `Brain error: ${err.message}`);
+    setListeningState(running ? 'Listening' : 'Ready', false);
   } finally {
     isBusy = false;
   }
 }
 
+// ==========================================================================
+// Event Listeners & Controls
+// ==========================================================================
 toggleCameraBtn.addEventListener('click', async () => {
   if (running) {
     running = false;
     clearInterval(scanTimer);
     if (continuousVisionTimer) clearInterval(continuousVisionTimer);
     stopListeningTemp();
+
     const stream = video.srcObject;
     if (stream) stream.getTracks().forEach((t) => t.stop());
     video.srcObject = null;
-    toggleCameraBtn.textContent = 'Start Robot';
-    toggleVoiceBtn.disabled = true;
-    setState('Stopped', false);
+
+    cameraOffOverlay.classList.remove('hidden');
+    previewTarget.textContent = 'You';
+    previewStatus.textContent = 'Camera off';
+    setListeningState('Ready · Tap Camera to start', false);
     return;
   }
 
   try {
-    // Unlock browser speech synthesis on direct user click
     if (speechEnabled && 'speechSynthesis' in window) {
       window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
     }
     await loadFaceModels();
+
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -614,17 +662,20 @@ toggleCameraBtn.addEventListener('click', async () => {
         audio: true,
       });
     } catch (mediaErr) {
-      console.warn('getUserMedia audio+video failed, trying video only:', mediaErr);
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       });
     }
+
     video.srcObject = stream;
     video.setAttribute('playsinline', 'true');
     video.setAttribute('webkit-playsinline', 'true');
-    await video.play().catch((e) => console.warn('video play catch:', e));
+    await video.play().catch(() => {});
 
-    // Acquire client geolocation coordinates (lat/long) for location-based tools
+    cameraOffOverlay.classList.add('hidden');
+    previewStatus.textContent = 'Camera active';
+
+    // Geolocation
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -632,14 +683,13 @@ toggleCameraBtn.addEventListener('click', async () => {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
           };
-          console.log(`[Geo] Location acquired: ${clientLocation.latitude.toFixed(4)}, ${clientLocation.longitude.toFixed(4)}`);
         },
-        (err) => {
-          console.warn('[Geo] Location access skipped or denied:', err.message);
-        },
+        () => {},
         { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 },
       );
     }
+
+    // Audio capture for voice descriptors
     try {
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack && window.MediaRecorder) {
@@ -657,41 +707,38 @@ toggleCameraBtn.addEventListener('click', async () => {
             reader.readAsDataURL(e.data);
           }
         };
-        audioMediaRecorder.start(2000); // 2-second audio chunks
+        audioMediaRecorder.start(2000);
       }
-    } catch (audioErr) {
-      console.warn('Audio recorder setup note:', audioErr);
-    }
+    } catch {}
+
     running = true;
-    toggleCameraBtn.textContent = 'Stop Robot';
-    toggleVoiceBtn.disabled = !SpeechRecognitionCtor;
-    if (SpeechRecognitionCtor) {
-      micEnabled = true;
-      toggleVoiceBtn.textContent = 'Mic: On';
+    if (SpeechRecognitionCtor && micEnabled) {
       startListening();
-    } else {
-      addMessage('system', 'Web SpeechRecognition not supported in this browser; use the text box below.');
     }
-    setState(micEnabled ? 'Watching & Listening' : 'Watching');
+    setListeningState('Listening · Always on', true);
     scanTimer = setInterval(scanFrame, SCAN_INTERVAL_MS);
     continuousVisionTimer = setInterval(streamContinuousVision, 2000);
   } catch (err) {
-    addMessage('system', `Startup error: ${err.message}`);
-    setState('Error', false);
+    appendChatBubble('robot', `Startup error: ${err.message}`);
+    setListeningState('Error starting camera', false);
   }
 });
 
 toggleVoiceBtn.addEventListener('click', () => {
   micEnabled = !micEnabled;
-  toggleVoiceBtn.textContent = micEnabled ? 'Mic: On' : 'Mic: Off';
-  if (micEnabled) startListening();
-  else stopListeningTemp();
-  setState(micEnabled ? 'Watching & Listening' : 'Watching');
+  toggleVoiceBtn.classList.toggle('active-state', micEnabled);
+  if (micEnabled && running) {
+    startListening();
+    setListeningState('Listening · Mic on', true);
+  } else {
+    stopListeningTemp();
+    setListeningState('Muted · Mic off', false);
+  }
 });
 
 toggleSpeechBtn.addEventListener('click', () => {
   speechEnabled = !speechEnabled;
-  toggleSpeechBtn.textContent = speechEnabled ? 'Voice: On' : 'Voice: Off';
+  toggleSpeechBtn.classList.toggle('active-state', speechEnabled);
   toggleSpeechBtn.setAttribute('aria-pressed', String(speechEnabled));
   if (!speechEnabled) window.speechSynthesis?.cancel();
 });
@@ -705,32 +752,25 @@ languageSelect.addEventListener('change', () => {
       startListening();
     }
   }
-  addMessage('system', `Speech language switched to ${languageSelect.options[languageSelect.selectedIndex].text}`);
 });
 
-registerForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const name = personNameInput.value.trim();
-  if (name) await completeRegistration(name);
+// Chat Popup Toggle
+openChatBtn.addEventListener('click', () => {
+  chatPopupBackdrop.hidden = false;
+  if (promptInput) promptInput.focus();
 });
 
-memorizeForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (isBusy) return;
-  const sceneText = sceneInput.value.trim();
-  if (!sceneText) return;
-  sceneInput.value = '';
-  isBusy = true;
-  try {
-    await postJson('/brain/memorize', { sceneText });
-    addMessage('system', `Memorized: "${sceneText}"`);
-  } catch (err) {
-    addMessage('system', `Memorize failed: ${err.message}`);
-  } finally {
-    isBusy = false;
+closeChatBtn.addEventListener('click', () => {
+  chatPopupBackdrop.hidden = true;
+});
+
+chatPopupBackdrop.addEventListener('click', (e) => {
+  if (e.target === chatPopupBackdrop) {
+    chatPopupBackdrop.hidden = true;
   }
 });
 
+// Chat Form Submit
 askForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const prompt = promptInput.value.trim();
@@ -739,4 +779,11 @@ askForm.addEventListener('submit', async (e) => {
   await handleUserPrompt(prompt);
 });
 
-setState('Ready — click Start Robot', false);
+// Registration Form Submit
+personNameForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = personNameInput.value.trim();
+  if (name) await completeRegistration(name);
+});
+
+setListeningState('Ready · Tap Camera icon to start', false);

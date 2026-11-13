@@ -3,64 +3,194 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ayinu — Embodied AI Robot</title>
+  <title>Aura · Ayinu Embodied AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/dist/face-api.js"></script>
   <script defer src="./app.js"></script>
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <span class="pulse-dot" id="statusDot" aria-hidden="true"></span>
-        <h1>Ayinu</h1>
-        <span class="status-pill" id="robotState">Initializing…</span>
+  <div class="aura-app" id="auraApp">
+    <!-- Top Header -->
+    <header class="aura-header">
+      <div class="brand-group">
+        <span class="brand-logo">aura</span>
+        <span class="live-tag">LIVE</span>
       </div>
-      <div class="controls">
-        <select id="languageSelect" class="select-lang" aria-label="Speech Language">
-          <option value="ml-IN" selected>മലയാളം (ml-IN)</option>
-          <option value="en-IN">English (en-IN)</option>
-          <option value="en-US">English (en-US)</option>
-        </select>
-        <button id="toggleCameraBtn" class="btn btn-primary" type="button">Start Robot</button>
-        <button id="toggleVoiceBtn" class="btn" type="button" disabled>Mic: Off</button>
-        <button id="toggleSpeechBtn" class="btn" type="button" aria-pressed="true">Voice: On</button>
+      <div class="availability-badge" id="availabilityBadge">
+        <span class="status-dot-green"></span>
+        <span class="availability-text">Always here · 24/7</span>
       </div>
     </header>
 
-    <main class="workspace">
-      <section class="vision-panel" aria-label="Webcam Vision">
-        <div class="video-frame">
-          <video id="webcam" autoplay muted playsinline></video>
-          <canvas id="overlay"></canvas>
-          <div class="person-badge" id="personBadge">No person detected</div>
+    <!-- Camera Preview Card (Top Left) -->
+    <div class="camera-preview-card" id="cameraPreviewCard">
+      <div class="camera-video-wrapper">
+        <video id="webcam" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div class="camera-off-overlay" id="cameraOffOverlay">
+          <div class="cam-icon-circle">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
+              <circle cx="12" cy="13" r="3"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div class="camera-preview-footer">
+        <span class="preview-target" id="previewTarget">You</span>
+        <span class="preview-status" id="previewStatus">Camera off</span>
+      </div>
+    </div>
+
+    <!-- Registration Floating Modal -->
+    <div class="register-floating-banner" id="registerForm" hidden>
+      <div class="reg-title">New person detected</div>
+      <div class="reg-subtitle">What is your name?</div>
+      <form id="personNameForm" class="reg-form">
+        <input id="personNameInput" type="text" placeholder="Enter your name…" required />
+        <button type="submit" class="reg-submit-btn">Remember Me</button>
+      </form>
+    </div>
+
+    <!-- Main Voice Centerpiece -->
+    <main class="voice-centerpiece">
+      <h1 class="voice-headline">A little space to think out loud.</h1>
+      <p class="voice-subheadline">Talk through an idea, ask a question, or just start talking.</p>
+
+      <!-- Animated Voice Waveform Canvas -->
+      <div class="voice-wave-container">
+        <canvas id="waveCanvas" width="800" height="180"></canvas>
+      </div>
+
+      <!-- State Indicator Capsule -->
+      <div class="listening-pill" id="listeningPill">
+        <span class="listening-dot" id="listeningDot"></span>
+        <span class="listening-text" id="listeningText">Ready · Tap Start</span>
+      </div>
+    </main>
+
+    <!-- Latest Dialogue Exchange Floating Card -->
+    <div class="latest-exchange-card" id="latestExchangeCard">
+      <div class="exchange-row you-row">
+        <span class="exchange-label">YOU</span>
+        <p class="exchange-text" id="latestUserText">Ask anything or speak aloud…</p>
+      </div>
+      <div class="exchange-row aura-row">
+        <span class="exchange-label">AURA</span>
+        <p class="exchange-text" id="latestRobotText">Hello! I'm Ayinu, your home assistant. Start the robot to begin.</p>
+      </div>
+    </div>
+
+    <!-- Bottom Controls Floating Dock -->
+    <footer class="conversation-controls-dock">
+      <div class="audio-control-bar">
+        <!-- Language Selector Capsule -->
+        <div class="lang-dropdown-capsule">
+          <select id="languageSelect" class="lang-select-input" aria-label="Spoken language">
+            <option value="en-IN" selected>English</option>
+            <option value="ml-IN">മലയാളം</option>
+            <option value="en-US">English (US)</option>
+          </select>
+          <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
         </div>
 
-        <form id="registerForm" class="register-banner" hidden>
-          <label for="personNameInput">New person detected — what is your name?</label>
-          <div class="inline-row">
-            <input id="personNameInput" type="text" placeholder="Enter name (or say it aloud)…" required />
-            <button type="submit" class="btn btn-primary">Remember Face</button>
+        <div class="control-divider"></div>
+
+        <!-- Start / Stop Camera Button -->
+        <button class="icon-round-btn" id="toggleCameraBtn" type="button" title="Start / Stop Camera">
+          <svg id="camBtnIcon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 7l-7 5 7 5V7z"/>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
+        </button>
+
+        <!-- Mic Mute / Unmute Button -->
+        <button class="icon-round-btn active-state" id="toggleVoiceBtn" type="button" title="Toggle Microphone">
+          <svg id="micBtnIcon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </button>
+
+        <!-- Speaker TTS Toggle Button -->
+        <button class="icon-round-btn" id="toggleSpeechBtn" type="button" title="Toggle Voice Output" aria-pressed="true">
+          <svg id="speakerBtnIcon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          </svg>
+        </button>
+
+        <!-- Open Text Chat Popup Button -->
+        <button class="chat-open-btn" id="openChatBtn" type="button" title="Open Text Conversation">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/>
+          </svg>
+          <span>Chat</span>
+        </button>
+      </div>
+
+      <div class="dock-caption" id="dockCaption">
+        Mic is ready · Tap Start to begin
+      </div>
+      <div class="disclaimer-subtext">
+        AI can make mistakes. Take a moment to check important details.
+      </div>
+    </footer>
+
+    <!-- Text Conversation Popup Overlay (Figma Node 5:11) -->
+    <div class="text-conversation-backdrop" id="chatPopupBackdrop" hidden>
+      <div class="text-conversation-popup" id="chatPopup" role="dialog" aria-modal="true" aria-labelledby="chatPopupTitle">
+        <div class="popup-header">
+          <div>
+            <h2 id="chatPopupTitle" class="popup-title">Conversation</h2>
+            <p class="popup-subtitle">Your voice and text, in one continuous conversation.</p>
           </div>
-        </form>
+          <button class="popup-close-btn" id="closeChatBtn" type="button" aria-label="Close conversation">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
 
-        <form id="memorizeForm" class="memorize-bar">
-          <label for="sceneInput" class="sr-only">Teach Ayinu a spatial observation</label>
-          <input id="sceneInput" type="text" placeholder="Teach spatial memory (e.g. 'The red mug is on the desk')…" />
-          <button type="submit" class="btn">Memorize</button>
-        </form>
-      </section>
+        <div class="popup-divider"></div>
 
-      <section class="chat-panel" aria-label="Conversation">
-        <div class="chat-log" id="chatLog" role="log" aria-live="polite"></div>
+        <div class="popup-scroll-body" id="chatLog">
+          <div class="day-divider-pill">TODAY · LIVE SESSIONS</div>
+          <!-- Dynamic bubbles will be appended here -->
+        </div>
 
-        <form id="askForm" class="ask-bar">
-          <label for="promptInput" class="sr-only">Ask Ayinu a question</label>
-          <input id="promptInput" type="text" placeholder="Ask Ayinu anything (or speak into your mic)…" />
-          <button type="submit" class="btn btn-primary">Send</button>
+        <div class="popup-divider"></div>
+
+        <!-- Chat Input Composer -->
+        <form id="askForm" class="popup-composer-form">
+          <input
+            id="promptInput"
+            class="popup-composer-input"
+            type="text"
+            placeholder="Type a message…"
+            autocomplete="off"
+          />
+          <button type="submit" class="popup-send-btn" aria-label="Send message">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
         </form>
-      </section>
-    </main>
+        <div class="composer-footnote">
+          Voice stays on while you chat. Close this window to return to voice.
+        </div>
+      </div>
+    </div>
   </div>
 </body>
 </html>

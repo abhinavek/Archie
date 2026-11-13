@@ -1,246 +1,712 @@
+/* ==========================================================================
+   Aura · Ayinu Design System (Figma Spec 2:2 & 5:11)
+   Light airy palette: #f7faff -> #f0f0ff -> #faf2f5
+   Typography: Inter
+   ========================================================================== */
+
 :root {
-  color-scheme: dark;
-  --bg: #0b0f17;
-  --surface: #131a26;
-  --surface-2: #1b2434;
-  --border: #28354a;
-  --text: #e6edf7;
-  --muted: #8fa1bc;
-  --accent: #38bdf8;
-  --accent-strong: #0284c7;
-  --ok: #22c55e;
-  --warn: #f59e0b;
+  --bg-gradient: linear-gradient(150deg, #f7faff 0%, #f0f0ff 35.7%, #faf2f5 71.4%);
+  --text-primary: #373647;
+  --text-secondary: #736a86;
+  --text-muted: #857a96;
+  --text-subtle: #96909f;
+  --surface-card: #ffffff;
+  --surface-subtle: #f6f5fa;
+  --surface-active: #eee9fa;
+  --surface-bubble-user: #eee8f8;
+  --surface-bubble-robot: #f4f1f8;
+  --border-card: #e6e0ef;
+  --border-divider: #eae5f0;
+  --accent-purple: #817096;
+  --accent-purple-strong: #6d608f;
+  --online-green: #22c55e;
 }
 
 * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
-  margin: 0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-gradient);
+  color: var(--text-primary);
+  min-height: 100vh;
   min-height: 100dvh;
+  overflow-x: hidden;
+  user-select: none;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
-.app-shell {
+.aura-app {
+  position: relative;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  max-width: 1400px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 1.5rem 2rem;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 1rem;
-  gap: 1rem;
 }
 
-.topbar {
+/* ==========================================================================
+   1. Header
+   ========================================================================== */
+.aura-header {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  height: 48px;
+  z-index: 10;
 }
 
-.brand {
+.brand-group {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
 
-.brand h1 {
-  margin: 0;
-  font-size: 1.2rem;
+.brand-logo {
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: #373647;
+}
+
+.live-tag {
+  font-size: 0.65rem;
   font-weight: 700;
-}
-
-.pulse-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--muted);
-}
-
-.pulse-dot.active {
-  background: var(--ok);
-  box-shadow: 0 0 10px var(--ok);
-}
-
-.status-pill {
-  font-size: 0.8rem;
-  padding: 0.25rem 0.65rem;
+  letter-spacing: 0.08em;
+  color: #78758c;
+  background: rgba(120, 117, 140, 0.12);
+  padding: 2px 7px;
   border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--muted);
+  transform: translateY(1px);
 }
 
-.controls {
+.availability-badge {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(230, 224, 239, 0.6);
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
 }
 
-.select-lang {
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text);
+.status-dot-green {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--online-green);
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+}
+
+.availability-text {
+  font-size: 0.75rem;
   font-weight: 500;
-  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+/* ==========================================================================
+   2. Camera Preview Card (Top Left)
+   ========================================================================== */
+.camera-preview-card {
+  position: absolute;
+  top: 6.5rem;
+  left: 2rem;
+  width: 220px;
+  background: #e4e4ed;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 10px 25px rgba(100, 95, 120, 0.08);
+  z-index: 15;
+  transition: transform 0.2s ease;
+}
+
+.camera-video-wrapper {
+  position: relative;
+  width: 100%;
+  height: 120px;
+  background: #dcdce6;
+}
+
+.camera-video-wrapper video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.camera-video-wrapper canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.camera-off-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e4e4ed;
+  transition: opacity 0.25s ease;
+}
+
+.camera-off-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cam-icon-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #f2f2f7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #767487;
+}
+
+.camera-preview-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.85rem;
+  background: #e4e4ed;
+}
+
+.preview-target {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #5d5c70;
+}
+
+.preview-status {
+  font-size: 0.7rem;
+  color: #767487;
+}
+
+/* ==========================================================================
+   3. Person Registration Modal
+   ========================================================================== */
+.register-floating-banner {
+  position: absolute;
+  top: 17rem;
+  left: 2rem;
+  width: 260px;
+  background: #ffffff;
+  border: 1px solid var(--border-card);
+  border-radius: 18px;
+  padding: 1rem;
+  box-shadow: 0 12px 30px rgba(80, 70, 100, 0.12);
+  z-index: 30;
+  animation: fadeIn 0.25s ease;
+}
+
+.reg-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.reg-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.reg-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.reg-form input {
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-card);
+  background: #f9f8fc;
+  font-size: 0.8rem;
   outline: none;
 }
 
-.select-lang:focus {
-  border-color: var(--accent);
-}
-
-.btn {
-  padding: 0.5rem 0.9rem;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text);
+.reg-submit-btn {
+  padding: 0.45rem;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent-purple);
+  color: white;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
 }
 
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background: var(--accent-strong);
-  border-color: var(--accent);
-}
-
-.workspace {
-  display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
-  gap: 1rem;
-  flex: 1;
-  min-height: 0;
-}
-
-@media (max-width: 900px) {
-  .workspace {
-    grid-template-columns: 1fr;
-  }
-}
-
-.vision-panel,
-.chat-panel {
+/* ==========================================================================
+   4. Centerpiece Voice Area
+   ========================================================================== */
+.voice-centerpiece {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 0.9rem;
-  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  margin-top: 3.5rem;
+  z-index: 5;
 }
 
-.video-frame {
-  position: relative;
-  flex: 1;
-  background: #000;
-  border-radius: 10px;
-  overflow: hidden;
-  min-height: 280px;
+.voice-headline {
+  font-size: 2.15rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: #3b394f;
+  margin-bottom: 0.6rem;
 }
 
-#webcam,
-#overlay {
-  position: absolute;
-  inset: 0;
+.voice-subheadline {
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: #777387;
+  max-width: 520px;
+  line-height: 1.4;
+  margin-bottom: 1.5rem;
+}
+
+.voice-wave-container {
+  width: 100%;
+  max-width: 800px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-wave-container canvas {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  display: block;
 }
 
-.person-badge {
-  position: absolute;
-  left: 0.75rem;
-  bottom: 0.75rem;
-  padding: 0.35rem 0.75rem;
-  border-radius: 8px;
-  background: rgba(11, 15, 23, 0.82);
-  border: 1px solid var(--border);
-  font-size: 0.85rem;
+.listening-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #ffffff;
+  border: 1px solid rgba(220, 215, 230, 0.7);
+  box-shadow: 0 4px 14px rgba(100, 90, 120, 0.05);
+  padding: 0.35rem 0.95rem;
+  border-radius: 999px;
+  margin-top: 1rem;
 }
 
-.register-banner {
+.listening-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-purple-strong);
+  transition: background 0.2s;
+}
+
+.listening-pill.active .listening-dot {
+  background: var(--online-green);
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.7);
+  animation: pulseDot 1.2s infinite alternate;
+}
+
+.listening-text {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--accent-purple-strong);
+}
+
+/* ==========================================================================
+   5. Latest Exchange Floating Card
+   ========================================================================== */
+.latest-exchange-card {
+  max-width: 672px;
+  width: 100%;
+  margin: 1.5rem auto 1rem auto;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(230, 224, 239, 0.5);
+  border-radius: 20px;
+  padding: 1.1rem 1.4rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border-radius: 8px;
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid var(--warn);
+  gap: 0.85rem;
+  box-shadow: 0 8px 24px rgba(80, 70, 95, 0.04);
 }
 
-.inline-row,
-.memorize-bar,
-.ask-bar {
+.exchange-row {
   display: flex;
+  align-items: baseline;
+  gap: 1.25rem;
+}
+
+.exchange-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  width: 32px;
+  flex-shrink: 0;
+}
+
+.exchange-text {
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #51485f;
+  word-break: break-word;
+}
+
+.you-row .exchange-text {
+  font-weight: 500;
+  color: #5c526d;
+}
+
+/* ==========================================================================
+   6. Conversation Controls Dock (Bottom Center)
+   ========================================================================== */
+.conversation-controls-dock {
+  margin-top: auto;
+  padding-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  z-index: 10;
+}
+
+.audio-control-bar {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #ffffff;
+  box-shadow: 0 10px 30px rgba(70, 60, 90, 0.08);
+  border-radius: 999px;
+  padding: 0.45rem 0.65rem;
   gap: 0.5rem;
 }
 
-input[type="text"] {
-  flex: 1;
-  padding: 0.55rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text);
-  font-size: 0.95rem;
+.lang-dropdown-capsule {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--surface-subtle);
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
 }
 
-.chat-log {
+.lang-select-input {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #4d475f;
+  padding-right: 1.25rem;
+  cursor: pointer;
+  outline: none;
+}
+
+.chevron-icon {
+  position: absolute;
+  right: 0.75rem;
+  pointer-events: none;
+  color: #7d758f;
+}
+
+.control-divider {
+  width: 1px;
+  height: 28px;
+  background: #eae7f0;
+  margin: 0 0.2rem;
+}
+
+.icon-round-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-subtle);
+  color: #625a72;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.icon-round-btn:hover {
+  background: #eee9fa;
+  color: var(--accent-purple-strong);
+}
+
+.icon-round-btn.active-state {
+  background: var(--surface-active);
+  color: var(--accent-purple-strong);
+}
+
+.chat-open-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 1.1rem;
+  height: 48px;
+  border-radius: 999px;
+  border: none;
+  background: var(--surface-subtle);
+  color: #625a72;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.chat-open-btn:hover {
+  background: #eee9fa;
+  color: var(--accent-purple-strong);
+}
+
+.dock-caption {
+  font-size: 0.72rem;
+  color: #81798d;
+}
+
+.disclaimer-subtext {
+  font-size: 0.7rem;
+  color: #96909f;
+}
+
+/* ==========================================================================
+   7. Text Conversation Popup (Figma Node 5:11)
+   ========================================================================== */
+.text-conversation-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 25, 45, 0.25);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.2s ease;
+}
+
+.text-conversation-backdrop[hidden] {
+  display: none;
+}
+
+.text-conversation-popup {
+  width: 90%;
+  max-width: 720px;
+  height: 85vh;
+  max-height: 800px;
+  background: #fcfbfe;
+  border: 1px solid var(--border-card);
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(50, 40, 70, 0.15);
+  animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.5rem 1.75rem 1rem 1.75rem;
+}
+
+.popup-title {
+  font-size: 1.45rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #3b344b;
+}
+
+.popup-subtitle {
+  font-size: 0.82rem;
+  color: #7c718d;
+  margin-top: 0.25rem;
+}
+
+.popup-close-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: #f0ecf5;
+  color: #6b617b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.popup-close-btn:hover {
+  background: #e4dded;
+}
+
+.popup-divider {
+  height: 1px;
+  background: var(--border-divider);
+  width: 100%;
+}
+
+.popup-scroll-body {
   flex: 1;
   overflow-y: auto;
+  padding: 1.25rem 1.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  padding-right: 0.25rem;
+  gap: 1.25rem;
 }
 
-.msg {
-  padding: 0.65rem 0.85rem;
-  border-radius: 10px;
-  max-width: 88%;
+.day-divider-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #8c819b;
+  text-align: center;
+  margin: 0.25rem 0;
+}
+
+.chat-bubble-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.chat-bubble-group.user-group {
+  align-items: flex-end;
+}
+
+.chat-bubble-group.aura-group {
+  align-items: flex-start;
+}
+
+.bubble-role-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #8b7e9b;
+}
+
+.chat-bubble {
+  padding: 0.85rem 1.15rem;
+  border-radius: 16px;
+  font-size: 0.88rem;
   line-height: 1.45;
-  font-size: 0.95rem;
+  color: #51485f;
+  word-break: break-word;
+  max-width: 82%;
 }
 
-.msg.robot {
-  align-self: flex-start;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+.user-bubble {
+  background: var(--surface-bubble-user);
+  border-bottom-right-radius: 4px;
 }
 
-.msg.user {
-  align-self: flex-end;
-  background: var(--accent-strong);
+.aura-bubble {
+  background: var(--surface-bubble-robot);
+  border-bottom-left-radius: 4px;
 }
 
-.msg.system {
-  align-self: center;
-  font-size: 0.8rem;
-  color: var(--muted);
+.popup-composer-form {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0.85rem 1.5rem 0.4rem 1.5rem;
+  background: #f0ecf5;
+  border-radius: 18px;
+  padding: 0.4rem 0.5rem 0.4rem 1rem;
+}
+
+.popup-composer-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: #3b344b;
+  outline: none;
+}
+
+.popup-composer-input::placeholder {
+  color: #8a7b9c;
+}
+
+.popup-send-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: none;
+  background: var(--accent-purple);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.popup-send-btn:hover {
+  opacity: 0.9;
+}
+
+.composer-footnote {
+  text-align: center;
+  font-size: 0.7rem;
+  color: #80738f;
+  padding-bottom: 0.85rem;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes pulseDot {
+  from { transform: scale(1); opacity: 0.8; }
+  to { transform: scale(1.3); opacity: 1; }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .aura-app {
+    padding: 1rem;
+  }
+  .camera-preview-card {
+    position: static;
+    width: 100%;
+    margin-bottom: 1rem;
+  }
+  .voice-headline {
+    font-size: 1.6rem;
+  }
+  .audio-control-bar {
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }
