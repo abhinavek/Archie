@@ -38,6 +38,8 @@ function primeSpeechSynthesis() {
 }
 document.addEventListener('touchstart', primeSpeechSynthesis, { once: true });
 document.addEventListener('click', primeSpeechSynthesis, { once: true });
+
+let running = false;
 let modelsLoaded = false;
 let scanTimer = null;
 let speechEnabled = true;
