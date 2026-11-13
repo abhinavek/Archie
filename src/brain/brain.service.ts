@@ -33,8 +33,9 @@ const ROBOT_RULES = [
   'STRICTLY DO NOT hallucinate or guess personal details, contact numbers, object locations, or past events.',
   'When asked for remembered facts, numbers, names, or locations, consult ONLY the Recent Spatial & Factual Context and Conversation History below. If you genuinely do not know, say so simply and directly.',
 
-  // 6. Tool Execution
-  'When asked for live information (weather, web search) or to interact with physical actuators, you have tool access. Execute the tool and ground your spoken response entirely in the returned data.'
+  // 6. Tool Execution & Output Format
+  'When asked for live information (weather, web search) or to interact with physical actuators, you have tool access. Execute the tool and ground your spoken response entirely in the returned data.',
+  'STRICT FORMATTING RULE: When you are speaking to the user, respond directly in plain spoken text ONLY. NEVER output JSON objects, markdown fences, or fake function calls like {"name": "say", "parameters": {"text": "..."}} in your reply.'
 ];
 
 export interface ChatMessage {
@@ -283,6 +284,29 @@ export class BrainService {
       const ollamaDuration = Date.now() - tOllama;
       this.logger.log(`[ask:ollama] Llama response generated in ${ollamaDuration}ms`);
       answer = message?.content?.trim() ?? '';
+    }
+
+    // Clean up if the LLM wrapped its reply in tool JSON like {"name": "say", "parameters": {"text": "..."}}
+    if (answer.startsWith('{') && answer.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(answer) as Record<string, unknown>;
+        if (typeof parsed.parameters === 'object' && parsed.parameters !== null) {
+          const params = parsed.parameters as Record<string, unknown>;
+          if (typeof params.text === 'string' && params.text.trim()) {
+            answer = params.text.trim();
+          } else if (typeof params.message === 'string' && params.message.trim()) {
+            answer = params.message.trim();
+          }
+        } else if (typeof parsed.text === 'string' && parsed.text.trim()) {
+          answer = parsed.text.trim();
+        } else if (typeof parsed.answer === 'string' && parsed.answer.trim()) {
+          answer = parsed.answer.trim();
+        } else if (typeof parsed.response === 'string' && parsed.response.trim()) {
+          answer = parsed.response.trim();
+        }
+      } catch {
+        // Not valid JSON, keep answer as is
+      }
     }
 
     this.logger.log(`[ask:total] Total ask() time: ${Date.now() - totalStart}ms`);
