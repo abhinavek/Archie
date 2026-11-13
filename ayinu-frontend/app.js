@@ -499,19 +499,63 @@ function captureCurrentFrameBlob(callback) {
   }, 'image/jpeg', 0.6);
 }
 
+// Motion Detection Gatekeeper Configuration
+let previousImageData = null;
+const PIXEL_DIFF_THRESHOLD = 30; // Color deviation threshold (0-255)
+const MOTION_THRESHOLD = 1500;   // Minimum changed pixels to trigger AI vision send
+
 function streamContinuousVision() {
-  if (!running || isSpeaking || isBusy || awaitingName) return;
+  if (!running || isSpeaking || isBusy || awaitingName || video.readyState < 2) return;
 
-  captureCurrentFrameBlob((blob) => {
-    if (!blob) return;
+  // Use a dedicated offscreen canvas for high-performance pixel diffing
+  const motionCanvas = document.createElement('canvas');
+  motionCanvas.width = 320; // Downscale to 320x240 for ultra-fast zero-lag pixel checks
+  motionCanvas.height = 240;
+  const mCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
+  mCtx.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
 
-    // Gatekeeper Backpressure: If server is idle, transmit raw binary ArrayBuffer over WebSocket
-    if (socket && socket.connected && aiStatus === 'idle') {
-      blob.arrayBuffer().then((buffer) => {
-        socket.emit('stream-frame', buffer);
-      }).catch(() => {});
+  const currentImageData = mCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
+  let hasMotion = false;
+
+  if (!previousImageData) {
+    hasMotion = true; // Always transmit initial frame
+  } else {
+    let changedPixels = 0;
+    const curr = currentImageData.data;
+    const prev = previousImageData.data;
+
+    // Sample every 4th pixel (step by 16) to conserve CPU cycles
+    for (let i = 0; i < curr.length; i += 16) {
+      const rDiff = Math.abs(curr[i] - prev[i]);
+      const gDiff = Math.abs(curr[i + 1] - prev[i + 1]);
+      const bDiff = Math.abs(curr[i + 2] - prev[i + 2]);
+
+      if (rDiff + gDiff + bDiff > PIXEL_DIFF_THRESHOLD * 3) {
+        changedPixels++;
+      }
     }
-  });
+
+    // Scale threshold relative to downsampled frame size
+    if (changedPixels > (MOTION_THRESHOLD / 8)) {
+      hasMotion = true;
+      console.log(`[Motion Gatekeeper] Motion detected (${changedPixels * 4} pixels shifted)`);
+    }
+  }
+
+  if (hasMotion) {
+    previousImageData = currentImageData;
+
+    // Gatekeeper: Only compress and stream frame to server if AI backend is idle
+    if (socket && socket.connected && aiStatus === 'idle') {
+      // Capture full-res frame for AI inspection
+      captureCurrentFrameBlob((blob) => {
+        if (!blob) return;
+        blob.arrayBuffer().then((buffer) => {
+          socket.emit('stream-frame', buffer);
+        }).catch(() => {});
+      });
+    }
+  }
 }
 
 async function scanFrame() {

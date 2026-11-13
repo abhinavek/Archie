@@ -8,3 +8,4 @@ import { SensorsGateway } from './sensors.gateway.js';
   exports: [SensorsGateway],
 })
 export class GatewayModule {}
+
