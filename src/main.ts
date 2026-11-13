@@ -3,7 +3,11 @@ import path from 'node:path';
 import { setDefaultResultOrder } from 'node:dns';
 import { setDefaultAutoSelectFamily } from 'node:net';
 import { NestFactory } from '@nestjs/core';
+import dotenv from 'dotenv';
 import { AppModule } from './app.module.js';
+
+// Load .env before bootstrapping so process.env is populated for HTTPS options
+dotenv.config();
 
 setDefaultResultOrder('ipv4first');
 setDefaultAutoSelectFamily(false);
@@ -14,11 +18,18 @@ async function bootstrap() {
   const certPath = path.resolve(process.cwd(), 'ayinu-frontend/cert.pem');
 
   let httpsOptions: { key: Buffer; cert: Buffer } | undefined;
-  if (isHttps && fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-    httpsOptions = {
-      key: fs.readFileSync(keyPath),
-      cert: fs.readFileSync(certPath),
-    };
+  if (isHttps) {
+    if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+      httpsOptions = {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath),
+      };
+      console.log('🔒 HTTPS enabled on backend using ayinu-frontend SSL certificates');
+    } else {
+      console.warn('⚠️ ENABLE_HTTPS=true but certificates not found at:', keyPath);
+    }
+  } else {
+    console.log('🌐 HTTP mode enabled on backend (ENABLE_HTTPS is false or unset)');
   }
 
   const app = await NestFactory.create(AppModule, {
