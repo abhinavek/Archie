@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ayinu — Embodied AI Robot</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/dist/face-api.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="pulse-dot" id="statusDot" aria-hidden="true"></span>
+        <h1>Ayinu</h1>
+        <span class="status-pill" id="robotState">Initializing…</span>
+      </div>
+      <div class="controls">
+        <select id="languageSelect" class="select-lang" aria-label="Speech Language">
+          <option value="ml-IN" selected>മലയാളം (ml-IN)</option>
+          <option value="en-IN">English (en-IN)</option>
+          <option value="en-US">English (en-US)</option>
+        </select>
+        <button id="toggleCameraBtn" class="btn btn-primary" type="button">Start Robot</button>
+        <button id="toggleVoiceBtn" class="btn" type="button" disabled>Mic: Off</button>
+        <button id="toggleSpeechBtn" class="btn" type="button" aria-pressed="true">Voice: On</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="vision-panel" aria-label="Webcam Vision">
+        <div class="video-frame">
+          <video id="webcam" autoplay muted playsinline></video>
+          <canvas id="overlay"></canvas>
+          <div class="person-badge" id="personBadge">No person detected</div>
+        </div>
+
+        <form id="registerForm" class="register-banner" hidden>
+          <label for="personNameInput">New person detected — what is your name?</label>
+          <div class="inline-row">
+            <input id="personNameInput" type="text" placeholder="Enter name (or say it aloud)…" required />
+            <button type="submit" class="btn btn-primary">Remember Face</button>
+          </div>
+        </form>
+
+        <form id="memorizeForm" class="memorize-bar">
+          <label for="sceneInput" class="sr-only">Teach Ayinu a spatial observation</label>
+          <input id="sceneInput" type="text" placeholder="Teach spatial memory (e.g. 'The red mug is on the desk')…" />
+          <button type="submit" class="btn">Memorize</button>
+        </form>
+      </section>
+
+      <section class="chat-panel" aria-label="Conversation">
+        <div class="chat-log" id="chatLog" role="log" aria-live="polite"></div>
+
+        <form id="askForm" class="ask-bar">
+          <label for="promptInput" class="sr-only">Ask Ayinu a question</label>
+          <input id="promptInput" type="text" placeholder="Ask Ayinu anything (or speak into your mic)…" />
+          <button type="submit" class="btn btn-primary">Send</button>
+        </form>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
