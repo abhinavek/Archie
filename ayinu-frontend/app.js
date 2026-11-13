@@ -172,10 +172,28 @@ function initRecognition() {
   rec.interimResults = false;
   rec.continuous = true;
 
+  rec.onstart = () => {
+    console.log('[SpeechRecognition] Active and listening in:', rec.lang);
+  };
+
+  rec.onerror = (e) => {
+    console.warn('[SpeechRecognition] Error:', e.error, e.message);
+    if (e.error === 'not-allowed') {
+      addMessage('system', 'Microphone permission denied in browser.');
+    } else if (e.error === 'network') {
+      console.warn('[SpeechRecognition] Network error on STT service. Re-trying...');
+    }
+  };
+
   rec.onresult = async (event) => {
+    console.log('[SpeechRecognition] Received speech event, result count:', event.results.length);
     const last = event.results[event.results.length - 1];
-    if (!last?.isFinal) return;
+    if (!last?.isFinal) {
+      console.log('[SpeechRecognition] Interim transcript:', last?.[0]?.transcript);
+      return;
+    }
     const transcript = last[0].transcript.trim();
+    console.log('[SpeechRecognition] Final transcript:', transcript);
     if (!transcript || isSpeaking) return;
 
     if (awaitingName && pendingDescriptor) {
@@ -221,12 +239,16 @@ function initRecognition() {
   };
 
   rec.onend = () => {
+    console.log('[SpeechRecognition] onend fired. running:', running, 'micEnabled:', micEnabled, 'isSpeaking:', isSpeaking);
     if (running && micEnabled && !isSpeaking) {
-      try {
-        rec.start();
-      } catch {
-        // Ignore if already started
-      }
+      setTimeout(() => {
+        try {
+          rec.start();
+          console.log('[SpeechRecognition] Restarted listening');
+        } catch (err) {
+          console.log('[SpeechRecognition] Restart attempt error:', err.message);
+        }
+      }, 200);
     }
   };
 
