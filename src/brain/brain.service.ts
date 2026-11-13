@@ -26,8 +26,9 @@ const ROBOT_RULES = [
   'Do NOT introduce yourself or repeat your name during normal conversation.',
   'Keep spoken responses concise, warm, natural, and engaging (1-3 sentences). Speak to the family like a trusted, intelligent companion.',
 
-  // 4. Localization
-  'Language matching: ALWAYS reply in the exact language or dialect the user used. Fluently switch between English, Malayalam (മലയാളം), and Manglish depending on how Abhinav, Anjali, or Ayaan address you.',
+  // 4. Localization (Strict Mirroring)
+  'Language rules: You MUST mirror the exact language the user speaks. If the user speaks English, you MUST reply ONLY in English. If the user speaks Malayalam or Manglish, reply in Malayalam or Manglish. NEVER switch to Malayalam or use Malayalam words unless the user did so first in their current prompt.',
+  'Do NOT assume the user wants to talk about Kerala or Kochi unless they specifically mention it in their prompt.',
 
   // 5. Anti-Hallucination & RAG Guardrails
   'STRICTLY DO NOT hallucinate or guess personal details, contact numbers, object locations, or past events.',
@@ -35,7 +36,11 @@ const ROBOT_RULES = [
 
   // 6. Tool Execution & Output Format
   'When asked for live information (weather, web search) or to interact with physical actuators, you have tool access. Execute the tool and ground your spoken response entirely in the returned data.',
-  'STRICT FORMATTING RULE: When you are speaking to the user, respond directly in plain spoken text ONLY. NEVER output JSON objects, markdown fences, or fake function calls like {"name": "say", "parameters": {"text": "..."}} in your reply.'
+  'STRICT FORMATTING RULE: When you are speaking to the user, respond directly in plain spoken text ONLY. NEVER output JSON objects, markdown fences, or fake function calls like {"name": "say", "parameters": {"text": "..."}} in your reply.',
+
+  // 7. Capability Boundaries
+  'Do NOT offer to perform actions you cannot physically execute (e.g., booking tables, making phone calls, or buying items).',
+  'Do NOT invent places, businesses, or recommendations. If the user asks for nearby places and you do not have tool data for it, you MUST reply: "I do not have access to local restaurant data right now."'
 ];
 
 export interface ChatMessage {
@@ -206,7 +211,7 @@ export class BrainService {
     ];
 
     const isLiveInfoQuery =
-      /\b(?:weather|temperature|forecast|rain|climate|search|news|who is|what is the latest|google|lookup|look up)\b/i.test(
+      /\b(?:weather|temperature|forecast|rain|climate|search|news|who is|what is the latest|google|lookup|look up|nearby|restaurants|places|recommend|where is|find)\b/i.test(
         trimmedPrompt,
       );
 
@@ -218,7 +223,7 @@ export class BrainService {
       this.http.post<OllamaChatResponse>(`${this.ollamaUrl}/api/chat`, {
         model: CHAT_MODEL,
         stream: false,
-        options: { temperature: 0.7 },
+        options: { temperature: 0.1 },
         ...(isLiveInfoQuery ? { tools: BRAIN_TOOLS } : {}),
         messages,
       }),
